@@ -2,12 +2,15 @@ create table if not exists tenants (
   id text primary key,
   name text not null,
   email text not null unique,
-  plan text not null default 'trial' check (plan in ('trial','creator','studio')),
-  subscription_status text not null default 'trialing',
+  plan text not null default 'free' check (plan in ('free','creator','studio')),
+  subscription_status text not null default 'active',
   stripe_customer_id text,
   stripe_subscription_id text,
   clips_this_month integer not null default 0,
-  monthly_clip_limit integer not null default 30,
+  monthly_clip_limit integer not null default 10,
+  source_channel_limit integer not null default 1,
+  complimentary_creator boolean not null default false,
+  usage_month date not null default date_trunc('month',now())::date,
   created_at timestamptz not null default now()
 );
 

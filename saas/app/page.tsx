@@ -42,7 +42,8 @@ export default function HomePage() {
 
       <section className="pricing-section" id="pricing">
         <div><p className="overline">Simple pricing</p><h2>One upload can become a week of content.</h2></div>
-        <div className="price-card"><div><span>Creator</span><h3>$49<small>/month</small></h3><p>Up to 150 published clips monthly, one destination and multiple source channels, with a three-hour processing target.</p></div><Link className="button button-primary" href="/sign-up">Start 7-day trial <ArrowRight size={17} /></Link></div>
+        <div className="price-card"><div><span>Free</span><h3>$0<small>/month</small></h3><p>10 published Shorts monthly, one destination, and one source channel.</p></div><Link className="button button-ghost" href="/sign-up">Start free <ArrowRight size={17} /></Link></div>
+        <div className="price-card"><div><span>Creator</span><h3>$49<small>/month</small></h3><p>Up to 150 published Shorts monthly, one destination, five source channels, and a three-hour processing target.</p></div><Link className="button button-primary" href="/sign-up">Start 7-day trial <ArrowRight size={17} /></Link></div>
       </section>
       <footer><span>© 2026 ClipForge Cloud</span><span>Built around YouTube’s official OAuth and push APIs.</span></footer>
     </main>

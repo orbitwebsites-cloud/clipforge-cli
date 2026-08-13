@@ -9,7 +9,7 @@ export const DEMO_TENANT_ID = 'tenant_demo';
 export function demoStore(): DemoStore {
   if (!globalStore.__clipforgeStore) {
     globalStore.__clipforgeStore = {
-      tenants: [{ id: DEMO_TENANT_ID, name: 'New creator', email: 'creator@example.com', plan: 'trial', subscriptionStatus: 'trialing', stripeCustomerId: null, clipsThisMonth: 0, monthlyClipLimit: 15 }],
+      tenants: [{ id: DEMO_TENANT_ID, name: 'New creator', email: 'creator@example.com', plan: 'free', subscriptionStatus: 'active', stripeCustomerId: null, clipsThisMonth: 0, monthlyClipLimit: 10, sourceChannelLimit: 1, complimentaryCreator: false }],
       channels: [],
       sourceChannels: [],
       jobs: [],

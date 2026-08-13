@@ -1,4 +1,4 @@
-export type Plan = 'trial' | 'creator' | 'studio';
+export type Plan = 'free' | 'creator' | 'studio';
 export type JobStatus = 'queued' | 'downloading' | 'transcribing' | 'selecting' | 'rendering' | 'uploading' | 'complete' | 'failed';
 
 export type Channel = {
@@ -71,6 +71,8 @@ export type Tenant = {
   stripeCustomerId: string | null;
   clipsThisMonth: number;
   monthlyClipLimit: number;
+  sourceChannelLimit: number;
+  complimentaryCreator: boolean;
 };
 
 export type DashboardData = {

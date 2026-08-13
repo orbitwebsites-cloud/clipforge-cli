@@ -67,7 +67,7 @@ async function processJob(job) {
     await progress(job, 'transcribing', 24);
     const transcript = await transcribe(source.file, workDir, { language: 'en', log });
     await progress(job, 'selecting', 48);
-    const clips = await selectClips(transcript, meta.duration, log);
+    const clips = (await selectClips(transcript, meta.duration, log)).slice(0, Math.max(0, Number(job.maxUploads || 0)));
     if (!clips.length) throw new Error('No clips passed the channel quality gate');
     await progress(job, 'rendering', 62);
     const rendered = [];

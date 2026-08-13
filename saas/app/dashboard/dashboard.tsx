@@ -57,7 +57,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
 
     <section className="app-main" id="overview">
       {!destination ? <EmptyOnboarding name={data.tenant.name} /> : <>
-        <header className="app-header"><div><p className="overline">Creator workspace</p><h1>{destination.title}</h1><p>Shorts publish here. Add as many source channels as you want us to watch.</p></div><div className="header-actions"><span className="live-chip"><i /> Destination connected</span><button className="button button-dark" onClick={() => document.querySelector('#channels')?.scrollIntoView()}><Plus size={17} /> Add source</button></div></header>
+        <header className="app-header"><div><p className="overline">Creator workspace</p><h1>{destination.title}</h1><p>Shorts publish here. Your {data.tenant.plan} plan supports {data.tenant.sourceChannelLimit} source channel{data.tenant.sourceChannelLimit === 1 ? '' : 's'}.</p></div><div className="header-actions"><span className="live-chip"><i /> Destination connected</span><button className="button button-dark" onClick={() => document.querySelector('#channels')?.scrollIntoView()}><Plus size={17} /> Add source</button></div></header>
 
         {!data.sourceChannels.length ? <SourceOnboarding destination={destination.title} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} addSource={addSource} saving={saving} notice={notice} /> : <>
           <div className="metrics-grid">
@@ -79,7 +79,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
           </div>
         </>}
 
-        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan</p><h2>Destination: {destination.title}</h2><p>Reconnect anytime to publish Shorts to a different owned channel.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a><button className="button button-primary" onClick={startCheckout} disabled={saving}>Manage subscription <ArrowRight /></button></div></section>
+        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && <button className="button button-primary" onClick={startCheckout} disabled={saving}>{data.tenant.plan === 'free' ? 'Upgrade to Creator' : 'Manage subscription'} <ArrowRight /></button>}</div></section>
       </>}
     </section>
   </main>;

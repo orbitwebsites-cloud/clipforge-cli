@@ -5,6 +5,7 @@ import type { Channel, DashboardData, Job, JobStatus, StoredChannel, StoredSourc
 
 export async function getDashboard(tenantId: string): Promise<DashboardData> {
   if (!databaseEnabled()) return demoDashboard(tenantId);
+  await resetMonthlyUsage(tenantId);
   const [tenantResult, channelResult, sourceResult, jobResult, clipResult] = await Promise.all([
     query<any>('select * from tenants where id=$1', [tenantId]),
     query<any>('select * from channels where tenant_id=$1 and connected=true order by created_at desc', [tenantId]),
@@ -20,7 +21,7 @@ export async function getDashboard(tenantId: string): Promise<DashboardData> {
   const completed = jobs.filter((job: Job) => job.completedAt);
   const minutes = completed.map((job: Job) => (new Date(job.completedAt!).getTime() - new Date(job.detectedAt).getTime()) / 60000);
   return {
-    tenant: { id: tenant.id, name: tenant.name, email: tenant.email, plan: tenant.plan, subscriptionStatus: tenant.subscription_status, stripeCustomerId: tenant.stripe_customer_id, clipsThisMonth: Number(tenant.clips_this_month), monthlyClipLimit: Number(tenant.monthly_clip_limit) },
+    tenant: { id: tenant.id, name: tenant.name, email: tenant.email, plan: tenant.plan, subscriptionStatus: tenant.subscription_status, stripeCustomerId: tenant.stripe_customer_id, clipsThisMonth: Number(tenant.clips_this_month), monthlyClipLimit: Number(tenant.monthly_clip_limit), sourceChannelLimit: Number(tenant.source_channel_limit), complimentaryCreator: Boolean(tenant.complimentary_creator) },
     channels: channelResult.rows.map(mapChannel).map(publicChannel),
     sourceChannels: sourceResult.rows.map(mapSourceChannel).map(publicSourceChannel), jobs,
     sla: { targetMinutes: 180, deliveredOnTimePercent: minutes.length ? Math.round(100 * minutes.filter((m) => m <= 180).length / minutes.length) : 100, averageMinutes: minutes.length ? Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length) : 0 },
@@ -28,16 +29,34 @@ export async function getDashboard(tenantId: string): Promise<DashboardData> {
 }
 
 export async function ensureTenant(id: string, profile: { email: string; name: string }) {
+  const complimentary = complimentaryCreatorEmails().has(profile.email.toLowerCase());
   if (!databaseEnabled()) {
     const store = demoStore();
     const existing = store.tenants.find((tenant) => tenant.id === id || tenant.email === profile.email);
-    if (existing) return existing;
-    const tenant = { id, name: profile.name, email: profile.email, plan: 'trial' as const, subscriptionStatus: 'trialing' as const, stripeCustomerId: null, clipsThisMonth: 0, monthlyClipLimit: 15 };
+    if (existing) {
+      if (complimentary) Object.assign(existing, { plan: 'creator', subscriptionStatus: 'active', monthlyClipLimit: 150, sourceChannelLimit: 5, complimentaryCreator: true });
+      return existing;
+    }
+    const tenant = { id, name: profile.name, email: profile.email, plan: complimentary ? 'creator' as const : 'free' as const, subscriptionStatus: 'active' as const, stripeCustomerId: null, clipsThisMonth: 0, monthlyClipLimit: complimentary ? 150 : 10, sourceChannelLimit: complimentary ? 5 : 1, complimentaryCreator: complimentary };
     store.tenants.push(tenant); return tenant;
   }
-  const result = await query<any>(`insert into tenants (id,name,email,plan,subscription_status,monthly_clip_limit)
-    values ($1,$2,$3,'trial','trialing',15) on conflict (email) do update set name=excluded.name returning *`, [id, profile.name, profile.email]);
+  const result = await query<any>(`insert into tenants (id,name,email,plan,subscription_status,monthly_clip_limit,source_channel_limit,complimentary_creator)
+    values ($1,$2,$3,case when $4 then 'creator' else 'free' end,'active',case when $4 then 150 else 10 end,case when $4 then 5 else 1 end,$4)
+    on conflict (email) do update set name=excluded.name,
+      plan=case when tenants.complimentary_creator or excluded.complimentary_creator then 'creator' else tenants.plan end,
+      subscription_status=case when tenants.complimentary_creator or excluded.complimentary_creator then 'active' else tenants.subscription_status end,
+      monthly_clip_limit=case when tenants.complimentary_creator or excluded.complimentary_creator then 150 else tenants.monthly_clip_limit end,
+      source_channel_limit=case when tenants.complimentary_creator or excluded.complimentary_creator then 5 else tenants.source_channel_limit end,
+      complimentary_creator=tenants.complimentary_creator or excluded.complimentary_creator returning *`, [id, profile.name, profile.email, complimentary]);
   return result.rows[0];
+}
+
+const complimentaryCreatorEmails = () => new Set((process.env.COMPLIMENTARY_CREATOR_EMAILS || '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
+
+async function resetMonthlyUsage(tenantId?: string) {
+  if (!databaseEnabled()) return;
+  await query(`update tenants set clips_this_month=0,usage_month=date_trunc('month',now())::date
+    where usage_month < date_trunc('month',now())::date${tenantId ? ' and id=$1' : ''}`, tenantId ? [tenantId] : []);
 }
 
 const mapChannel = (row: any): StoredChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, title: row.title, handle: row.handle, sourceUrl: row.source_url, connected: row.connected, webhookSecret: row.webhook_secret, refreshTokenEncrypted: row.refresh_token_encrypted, createdAt: row.created_at.toISOString?.() || row.created_at });
@@ -71,8 +90,18 @@ export async function addSourceChannel(tenantId: string, destinationChannelId: s
   if (!databaseEnabled()) {
     const existing = demoStore().sourceChannels.find((source) => source.tenantId === tenantId && source.youtubeChannelId === input.youtubeChannelId);
     if (existing) return existing;
+    const tenant = demoStore().tenants.find((item) => item.id === tenantId);
+    const count = demoStore().sourceChannels.filter((source) => source.tenantId === tenantId).length;
+    if (!tenant || count >= tenant.sourceChannelLimit) throw new Error(`${tenant?.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${tenant?.sourceChannelLimit || 1} source channel${(tenant?.sourceChannelLimit || 1) === 1 ? '' : 's'}.`);
     return demoAddSourceChannel(tenantId, { ...input, destinationChannelId, connected: true, webhookSecret });
   }
+  const existing = await query<any>('select * from source_channels where tenant_id=$1 and youtube_channel_id=$2', [tenantId, input.youtubeChannelId]);
+  if (existing.rows[0]) return mapSourceChannel(existing.rows[0]);
+  const allowance = await query<any>(`select t.plan,t.source_channel_limit,count(s.id)::int as source_count
+    from tenants t left join source_channels s on s.tenant_id=t.id where t.id=$1 group by t.id`, [tenantId]);
+  const limits = allowance.rows[0];
+  if (!limits) throw new Error('Account not found');
+  if (Number(limits.source_count) >= Number(limits.source_channel_limit)) throw new Error(`${limits.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${limits.source_channel_limit} source channel${Number(limits.source_channel_limit) === 1 ? '' : 's'}.`);
   const result = await query<any>(`insert into source_channels (id,tenant_id,destination_channel_id,youtube_channel_id,title,handle,url,connected,webhook_secret)
     values ($1,$2,$3,$4,$5,$6,$7,true,$8)
     on conflict (tenant_id,youtube_channel_id) do update set title=excluded.title,handle=excluded.handle,url=excluded.url,connected=true,destination_channel_id=excluded.destination_channel_id
@@ -107,16 +136,23 @@ export async function enqueueVideo(source: StoredSourceChannel, video: { id: str
 
 export async function leaseNextJob(workerId: string) {
   if (!databaseEnabled()) {
-    const job = demoStore().jobs.find((j) => j.status === 'queued' || (j.leaseExpiresAt && new Date(j.leaseExpiresAt) < new Date()));
+    const job = demoStore().jobs.find((j) => {
+      const tenant = demoStore().tenants.find((item) => item.id === j.tenantId);
+      return Boolean(tenant && tenant.clipsThisMonth < tenant.monthlyClipLimit && (j.status === 'queued' || (j.leaseExpiresAt && new Date(j.leaseExpiresAt) < new Date())));
+    });
     if (!job) return null;
+    const tenant = demoStore().tenants.find((item) => item.id === job.tenantId)!;
     Object.assign(job, { status: 'downloading', progress: 5, startedAt: job.startedAt || new Date().toISOString(), leaseOwner: workerId, leaseExpiresAt: new Date(Date.now() + 10 * 60000).toISOString() });
-    return job;
+    return { ...job, maxUploads: tenant.monthlyClipLimit - tenant.clipsThisMonth };
   }
+  await resetMonthlyUsage();
   const result = await query<any>(`with candidate as (
-      select id from jobs where status='queued' or (status not in ('complete','failed') and lease_expires_at < now()) order by deadline_at asc for update skip locked limit 1
+      select j.id,t.monthly_clip_limit-t.clips_this_month as max_uploads from jobs j join tenants t on t.id=j.tenant_id
+      where t.clips_this_month<t.monthly_clip_limit and (j.status='queued' or (j.status not in ('complete','failed') and j.lease_expires_at < now()))
+      order by j.deadline_at asc for update of j skip locked limit 1
     ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '10 minutes'
-    where id=(select id from candidate) returning *`, [workerId]);
-  return result.rows[0] ? mapJob(result.rows[0]) : null;
+    from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads`, [workerId]);
+  return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads) } : null;
 }
 
 export async function updateJob(jobId: string, workerId: string, status: JobStatus, progress: number, error: string | null = null) {
@@ -140,10 +176,21 @@ export async function channelRefreshToken(channelId: string) {
 export async function replaceJobClips(jobId: string, clips: Array<{ title: string; durationSeconds: number; youtubeVideoId: string; youtubeUrl: string }>) {
   if (!databaseEnabled()) {
     const job = demoStore().jobs.find((j) => j.id === jobId);
-    if (job) job.clips = clips.map((clip) => ({ ...clip, id: randomUUID(), jobId, status: 'uploaded' }));
+    if (job) {
+      const tenant = demoStore().tenants.find((item) => item.id === job.tenantId);
+      const accepted = clips.slice(0, Math.max(0, (tenant?.monthlyClipLimit || 0) - (tenant?.clipsThisMonth || 0)));
+      job.clips = accepted.map((clip) => ({ ...clip, id: randomUUID(), jobId, status: 'uploaded' }));
+      if (tenant) tenant.clipsThisMonth += accepted.length;
+    }
     return;
   }
-  for (const clip of clips) await query(`insert into clips (id,job_id,title,duration_seconds,youtube_video_id,youtube_url,status) values ($1,$2,$3,$4,$5,$6,'uploaded') on conflict (job_id,youtube_video_id) do nothing`, [randomUUID(), jobId, clip.title, clip.durationSeconds, clip.youtubeVideoId, clip.youtubeUrl]);
+  let inserted = 0;
+  for (const clip of clips) {
+    const result = await query(`insert into clips (id,job_id,title,duration_seconds,youtube_video_id,youtube_url,status) values ($1,$2,$3,$4,$5,$6,'uploaded') on conflict (job_id,youtube_video_id) do nothing`, [randomUUID(), jobId, clip.title, clip.durationSeconds, clip.youtubeVideoId, clip.youtubeUrl]);
+    inserted += result.rowCount || 0;
+  }
+  if (inserted) await query(`update tenants t set clips_this_month=least(t.monthly_clip_limit,t.clips_this_month+$2)
+    from jobs j where j.id=$1 and t.id=j.tenant_id`, [jobId, inserted]);
 }
 
 export async function monitoredSourceChannels() {

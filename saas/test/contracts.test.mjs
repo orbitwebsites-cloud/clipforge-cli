@@ -60,3 +60,13 @@ test('dashboard repository strips OAuth and webhook secrets', () => {
   assert.match(repository, /_webhookSecret/);
   assert.match(repository, /_refreshToken/);
 });
+
+test('free and creator plan limits are enforced by the backend', () => {
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../migrations/003_plan_limits.sql', import.meta.url), 'utf8');
+  assert.match(repository, /source_channel_limit/);
+  assert.match(repository, /monthly_clip_limit/);
+  assert.match(migration, /monthly_clip_limit=10/);
+  assert.match(migration, /source_channel_limit=5/);
+  assert.match(migration, /complimentary_creator/);
+});
