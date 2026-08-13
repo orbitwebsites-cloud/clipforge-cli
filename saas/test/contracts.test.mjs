@@ -79,3 +79,14 @@ test('Creator jobs receive priority queueing and truthful three-hour positioning
   assert.match(landing, /Priority queue with 3-hour target/);
   assert.match(landing, /150 published Shorts monthly/);
 });
+
+test('annual Creator checkout saves $68 and domain migration preserves Google OAuth', () => {
+  const checkout = readFileSync(new URL('../app/api/billing/checkout/route.ts', import.meta.url), 'utf8');
+  const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
+  const landing = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  assert.match(checkout, /WHOP_CREATOR_ANNUAL_CHECKOUT_URL/);
+  assert.match(checkout, /billingCycle/);
+  assert.match(youtube, /GOOGLE_OAUTH_REDIRECT_URI/);
+  assert.match(landing, /\$520\/year/);
+  assert.match(landing, /Save \$68/);
+});

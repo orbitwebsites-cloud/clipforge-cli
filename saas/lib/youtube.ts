@@ -10,8 +10,10 @@ export const YOUTUBE_SCOPES = [
   'https://www.googleapis.com/auth/yt-analytics.readonly',
 ];
 
+export const googleOAuthRedirectUri = () => process.env.GOOGLE_OAUTH_REDIRECT_URI || `${appUrl()}/api/auth/youtube/callback`;
+
 export async function exchangeCode(code: string) {
-  const redirectUri = `${appUrl()}/api/auth/youtube/callback`;
+  const redirectUri = googleOAuthRedirectUri();
   const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: process.env.GOOGLE_CLIENT_ID || '', client_secret: process.env.GOOGLE_CLIENT_SECRET || '', redirect_uri: redirectUri, grant_type: 'authorization_code' }) });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error_description || body.error || 'Google token exchange failed');

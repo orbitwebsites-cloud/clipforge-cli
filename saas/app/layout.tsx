@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     title: 'Turn every YouTube upload into captioned Shorts',
     description: 'Connect your channels once. ClipForge finds the moments, adds captions, and publishes the Shorts for you.',
     type: 'website',
-    url: 'https://saas-puce-one-84.vercel.app',
+    url: 'https://clipforge.klippdstudio.com',
     siteName: 'ClipForge Cloud',
   },
 };

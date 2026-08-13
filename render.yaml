@@ -13,7 +13,7 @@ services:
     dockerfilePath: ./saas/Dockerfile.worker
     envVars:
       - key: CONTROL_PLANE_URL
-        value: https://saas-puce-one-84.vercel.app
+        value: https://clipforge.klippdstudio.com
       - key: WORKER_SECRET
         sync: false
       - key: CEREBRAS_API_KEY

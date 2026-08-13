@@ -41,9 +41,9 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
     if (!response.ok) setNotice(body.error || 'Could not remove source.');
   }
 
-  async function startCheckout() {
+  async function startCheckout(billingCycle: 'monthly' | 'annual' = 'monthly') {
     setSaving(true);
-    const response = await fetch('/api/billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: 'creator' }) });
+    const response = await fetch('/api/billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: 'creator', billingCycle }) });
     const body = await response.json(); setSaving(false);
     if (body.url) window.location.href = body.url;
   }
@@ -79,7 +79,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
           </div>
         </>}
 
-        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && <button className="button button-primary" onClick={startCheckout} disabled={saving}>{data.tenant.plan === 'free' ? 'Upgrade to Creator' : 'Manage subscription'} <ArrowRight /></button>}</div></section>
+        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && <><button className="button button-ghost" onClick={() => startCheckout('monthly')} disabled={saving}>$49 monthly</button><button className="button button-primary" onClick={() => startCheckout('annual')} disabled={saving}>$520 yearly · Save $68 <ArrowRight /></button></>}</div></section>
       </>}
     </section>
   </main>;

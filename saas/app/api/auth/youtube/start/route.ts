@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { signState } from '@/lib/crypto';
 import { tenantIdFromSession } from '@/lib/session';
-import { YOUTUBE_SCOPES } from '@/lib/youtube';
+import { googleOAuthRedirectUri, YOUTUBE_SCOPES } from '@/lib/youtube';
 import { appUrl } from '@/lib/app-url';
 
 export async function GET() {
@@ -13,7 +13,7 @@ export async function GET() {
     const jar = await cookies();
     jar.set('youtube_oauth_state', state, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 600, path: '/' });
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    url.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: `${appUrl()}/api/auth/youtube/callback`, response_type: 'code', scope: YOUTUBE_SCOPES.join(' '), access_type: 'offline', include_granted_scopes: 'true', prompt: 'consent', state }).toString();
+    url.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: googleOAuthRedirectUri(), response_type: 'code', scope: YOUTUBE_SCOPES.join(' '), access_type: 'offline', include_granted_scopes: 'true', prompt: 'consent', state }).toString();
     return NextResponse.redirect(url);
   } catch { return NextResponse.redirect(new URL('/?auth=unavailable', appUrl())); }
 }

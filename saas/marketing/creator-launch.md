@@ -1,6 +1,6 @@
 # ClipForge Creator launch campaign
 
-Primary CTA: Start the 7-day Creator trial at https://saas-puce-one-84.vercel.app
+Primary CTA: Start the 7-day Creator trial at https://clipforge.klippdstudio.com
 
 ## Positioning
 
@@ -34,7 +34,7 @@ Creator includes:
 - priority 3-hour delivery target
 - original audio, no fake voiceover
 
-Try it free for 7 days: https://saas-puce-one-84.vercel.app
+Try it free for 7 days: https://clipforge.klippdstudio.com
 
 ## LinkedIn launch post
 
@@ -50,7 +50,7 @@ ClipForge Creator turns that workflow into an automatic pipeline:
 - publishes up to 150 Shorts per month
 - prioritizes Creator jobs for a three-hour delivery target
 
-The 7-day Creator trial is now live: https://saas-puce-one-84.vercel.app
+The 7-day Creator trial is now live: https://clipforge.klippdstudio.com
 
 ## Seven-day organic rollout
 

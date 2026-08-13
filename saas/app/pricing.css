@@ -88,6 +88,28 @@
   width: 14px;
 }
 
+.annual-offer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: -3px 0 16px;
+}
+
+.annual-offer b {
+  font: 700 15px 'Manrope';
+}
+
+.annual-offer span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: #171713;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
 .creator-proof {
   max-width: 1080px;
   margin: 0 auto 120px;
