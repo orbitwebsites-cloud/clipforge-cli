@@ -33,8 +33,9 @@ export async function ensureTenant(id: string, profile: { email: string; name: s
   const complimentary = complimentaryCreatorEmails().has(profile.email.toLowerCase());
   if (!databaseEnabled()) {
     const store = demoStore();
-    const existing = store.tenants.find((tenant) => tenant.id === id || tenant.email === profile.email);
+    const existing = store.tenants.find((tenant) => tenant.id === id);
     if (existing) {
+      Object.assign(existing, { name: profile.name, email: profile.email });
       if (complimentary) Object.assign(existing, { plan: 'creator', subscriptionStatus: 'active', monthlyClipLimit: 150, sourceChannelLimit: 5, complimentaryCreator: true });
       return existing;
     }
@@ -43,7 +44,7 @@ export async function ensureTenant(id: string, profile: { email: string; name: s
   }
   const result = await query<any>(`insert into tenants (id,name,email,plan,subscription_status,monthly_clip_limit,source_channel_limit,complimentary_creator)
     values ($1,$2,$3,case when $4 then 'creator' else 'free' end,'active',case when $4 then 150 else 10 end,case when $4 then 5 else 1 end,$4)
-    on conflict (email) do update set name=excluded.name,
+    on conflict (id) do update set name=excluded.name,email=excluded.email,
       plan=case when tenants.complimentary_creator or excluded.complimentary_creator then 'creator' else tenants.plan end,
       subscription_status=case when tenants.complimentary_creator or excluded.complimentary_creator then 'active' else tenants.subscription_status end,
       monthly_clip_limit=case when tenants.complimentary_creator or excluded.complimentary_creator then 150 else tenants.monthly_clip_limit end,
@@ -76,6 +77,8 @@ export async function saveConnectedChannel(tenantId: string, input: { youtubeCha
     for (const source of demoStore().sourceChannels) if (source.tenantId === tenantId) source.destinationChannelId = destination.id;
     return destination;
   }
+  const tenant = await query<{ id: string }>('select id from tenants where id=$1', [tenantId]);
+  if (!tenant.rows[0]) throw new Error('Signed-in account workspace was not found');
   await query('update channels set connected=false where tenant_id=$1', [tenantId]);
   const result = await query<any>(`insert into channels (id,tenant_id,youtube_channel_id,title,handle,source_url,connected,webhook_secret,refresh_token_encrypted)
     values ($1,$2,$3,$4,$5,$6,true,$7,$8)

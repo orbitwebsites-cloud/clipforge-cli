@@ -1,13 +1,13 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { signState } from '@/lib/crypto';
-import { tenantIdFromSession } from '@/lib/session';
+import { ensureCurrentTenant } from '@/lib/session';
 import { googleOAuthRedirectUri, YOUTUBE_SCOPES } from '@/lib/youtube';
 import { appUrl } from '@/lib/app-url';
 
 export async function GET() {
   try {
-    const tenantId = await tenantIdFromSession();
+    const tenantId = (await ensureCurrentTenant()).id;
     if (!process.env.GOOGLE_CLIENT_ID) return NextResponse.redirect(new URL('/dashboard?youtube=configure-google', appUrl()));
     const state = signState({ tenantId, nonce: crypto.randomUUID(), exp: Date.now() + 10 * 60000 });
     const jar = await cookies();

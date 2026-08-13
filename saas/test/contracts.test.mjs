@@ -42,10 +42,20 @@ test('dashboard monitors decision-ready YouTube analytics with a quota cache', (
 
 test('Clerk provisions the account before destination YouTube OAuth', () => {
   const session = readFileSync(new URL('../lib/session.ts', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  const start = readFileSync(new URL('../app/api/auth/youtube/start/route.ts', import.meta.url), 'utf8');
   const callback = readFileSync(new URL('../app/api/auth/youtube/callback/route.ts', import.meta.url), 'utf8');
+  const isolation = readFileSync(new URL('../migrations/006_tenant_identity_isolation.sql', import.meta.url), 'utf8');
   assert.match(session, /currentUser/);
   assert.match(session, /ensureTenant/);
+  assert.match(start, /ensureCurrentTenant/);
   assert.match(callback, /saveConnectedChannel/);
+  assert.match(callback, /tenantIdFromSession/);
+  assert.match(callback, /state\.tenantId !== activeTenantId/);
+  assert.match(repository, /on conflict \(id\)/i);
+  assert.doesNotMatch(repository, /on conflict \(email\)/i);
+  assert.doesNotMatch(repository, /tenant\.id === id \|\| tenant\.email/);
+  assert.match(isolation, /drop constraint if exists tenants_email_key/);
   assert.doesNotMatch(callback, /clipforge_session/);
 });
 

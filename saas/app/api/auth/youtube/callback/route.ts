@@ -4,6 +4,7 @@ import { encryptSecret, verifyState } from '@/lib/crypto';
 import { saveConnectedChannel } from '@/lib/repository';
 import { exchangeCode, ownedYouTubeChannel } from '@/lib/youtube';
 import { appUrl } from '@/lib/app-url';
+import { tenantIdFromSession } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   const baseUrl = appUrl();
@@ -14,6 +15,8 @@ export async function GET(request: NextRequest) {
     if (!code || !stateValue || stateValue !== jar.get('youtube_oauth_state')?.value) throw new Error('Invalid OAuth state');
     const state = verifyState<{ tenantId: string; exp: number }>(stateValue);
     if (!state || state.exp < Date.now()) throw new Error('Expired OAuth state');
+    const activeTenantId = await tenantIdFromSession();
+    if (state.tenantId !== activeTenantId) throw new Error('Google authorization belongs to a different signed-in account');
     const tokens = await exchangeCode(code);
     if (!tokens.refresh_token) throw new Error('Google did not return offline access. Revoke the app and reconnect.');
     const owned = await ownedYouTubeChannel(tokens.access_token);

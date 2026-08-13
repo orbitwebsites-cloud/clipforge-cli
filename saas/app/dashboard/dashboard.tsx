@@ -169,7 +169,7 @@ function AnalyticsPanel({ destinationId }: { destinationId: string }) {
 }
 
 function EmptyOnboarding({ name }: { name: string }) {
-  return <section className="onboarding-empty"><div className="onboarding-orbit"><span><UploadCloud /></span></div><p className="overline">Welcome, {name.split(' ')[0]}</p><h1>Let’s publish your first Shorts.</h1><p>Your dashboard is empty because no destination channel is connected yet. Choose the YouTube channel where ClipForge should upload your finished clips.</p><a className="button button-primary button-large" href="/api/auth/youtube/start">Get started <ArrowRight /></a><small><Check /> You will approve YouTube upload access on Google</small></section>;
+  return <section className="onboarding-empty"><div className="onboarding-orbit"><span><UploadCloud /></span></div><p className="overline">Welcome, {name.split(' ')[0]}</p><h1>Let’s publish your first Shorts.</h1><p>This is a brand-new workspace with nothing linked. Sign in with Google below and choose the YouTube channel where ClipForge should upload your finished clips.</p><a className="button button-primary button-large" href="/api/auth/youtube/start">Connect YouTube with Google <ArrowRight /></a><small><Check /> A channel is linked only after Google confirms you own it</small></section>;
 }
 
 function SourceOnboarding({ destination, sourceUrl, setSourceUrl, addSource, saving, notice }: { destination: string; sourceUrl: string; setSourceUrl: (value: string) => void; addSource: (event: React.FormEvent) => void; saving: boolean; notice: string }) {
