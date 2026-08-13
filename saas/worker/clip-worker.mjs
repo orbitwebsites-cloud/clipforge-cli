@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:http';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const saasRoot = path.resolve(here, '..');
@@ -26,6 +27,12 @@ const secret = process.env.WORKER_SECRET || '';
 const workerId = process.env.WORKER_ID || `worker-${randomUUID().slice(0, 8)}`;
 const pollMs = Number(process.env.WORKER_POLL_MS || 15000);
 const once = process.argv.includes('--once');
+const port = Number(process.env.PORT || 0);
+
+if (port > 0) createServer((_request, response) => {
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify({ ok: true, service: 'clipforge-media-worker', workerId }));
+}).listen(port, '0.0.0.0', () => console.log(`Worker health server listening on ${port}`));
 
 async function api(route, body) {
   const response = await fetch(`${baseUrl}${route}`, { method: 'POST', headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });

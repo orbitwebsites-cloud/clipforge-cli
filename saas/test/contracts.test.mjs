@@ -11,6 +11,7 @@ test('worker keeps the proven clip duration and caption format', () => {
   const worker = readFileSync(new URL('../worker/clip-worker.mjs', import.meta.url), 'utf8');
   assert.match(worker, /min: 15, max: 32/);
   assert.match(worker, /captions: true/);
+  assert.match(worker, /listen\(port, '0\.0\.0\.0'/);
   assert.doesNotMatch(worker, /voiceover|narration/i);
 });
 
