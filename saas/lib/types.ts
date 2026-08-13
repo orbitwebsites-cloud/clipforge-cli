@@ -86,3 +86,45 @@ export type DashboardData = {
   jobs: Job[];
   sla: { targetMinutes: number; deliveredOnTimePercent: number; averageMinutes: number };
 };
+
+export type ChannelAnalytics = {
+  source: 'youtube';
+  rangeDays: 7 | 28 | 90;
+  startDate: string;
+  endDate: string;
+  syncedAt: string;
+  summary: {
+    views: number;
+    watchMinutes: number;
+    averageViewDuration: number;
+    likes: number;
+    comments: number;
+    subscribersGained: number;
+    subscribersLost: number;
+    netSubscribers: number;
+    engagementRate: number;
+  };
+  channelTotals: {
+    subscribers: number | null;
+    lifetimeViews: number;
+    videos: number;
+  };
+  trend: Array<{
+    date: string;
+    views: number;
+    watchMinutes: number;
+    subscribersGained: number;
+    subscribersLost: number;
+  }>;
+  shorts: Array<{
+    videoId: string;
+    title: string;
+    url: string;
+    views: number;
+    watchMinutes: number;
+    averageViewDuration: number;
+    likes: number;
+    comments: number;
+    subscribersGained: number;
+  }>;
+};

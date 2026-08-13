@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { databaseEnabled, query } from './db';
 import { demoAddChannel, demoAddSourceChannel, demoDashboard, demoEnqueue, demoStore } from './demo-store';
-import type { Channel, DashboardData, Job, JobStatus, StoredChannel, StoredSourceChannel } from './types';
+import type { Channel, ChannelAnalytics, DashboardData, Job, JobStatus, StoredChannel, StoredSourceChannel } from './types';
 
 export async function getDashboard(tenantId: string): Promise<DashboardData> {
   if (!databaseEnabled()) return demoDashboard(tenantId);
@@ -182,6 +182,32 @@ export async function channelRefreshToken(channelId: string) {
   if (!databaseEnabled()) return demoStore().channels.find((c) => c.id === channelId)?.refreshTokenEncrypted || null;
   const result = await query<{ refresh_token_encrypted: string }>('select refresh_token_encrypted from channels where id=$1', [channelId]);
   return result.rows[0]?.refresh_token_encrypted || null;
+}
+
+export async function analyticsChannelForTenant(tenantId: string) {
+  if (!databaseEnabled()) return demoStore().channels.find((channel) => channel.tenantId === tenantId && channel.connected) || null;
+  const result = await query<any>('select * from channels where tenant_id=$1 and connected=true order by created_at desc limit 1', [tenantId]);
+  return result.rows[0] ? mapChannel(result.rows[0]) : null;
+}
+
+export async function cachedChannelAnalytics(channelId: string, rangeDays: number) {
+  if (!databaseEnabled()) return null;
+  const result = await query<{ data: ChannelAnalytics; synced_at: Date }>(
+    `select data,synced_at from channel_analytics_snapshots
+     where channel_id=$1 and range_days=$2 and synced_at > now()-interval '15 minutes'`,
+    [channelId, rangeDays],
+  );
+  return result.rows[0]?.data || null;
+}
+
+export async function saveChannelAnalytics(channelId: string, rangeDays: number, data: ChannelAnalytics) {
+  if (!databaseEnabled()) return;
+  await query(
+    `insert into channel_analytics_snapshots (channel_id,range_days,data,synced_at)
+     values ($1,$2,$3,now()) on conflict (channel_id,range_days)
+     do update set data=excluded.data,synced_at=excluded.synced_at`,
+    [channelId, rangeDays, data],
+  );
 }
 
 export async function replaceJobClips(jobId: string, clips: Array<{ title: string; durationSeconds: number; youtubeVideoId: string; youtubeUrl: string }>) {

@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
-import { Activity, ArrowRight, Captions, Check, Clock3, ExternalLink, Gauge, LayoutDashboard, Link2, LoaderCircle, Play, Plus, Radio, Settings, Sparkles, Trash2, Tv, UploadCloud } from 'lucide-react';
-import type { DashboardData, JobStatus } from '@/lib/types';
+import { Activity, ArrowRight, BarChart3, Captions, Check, Clock3, ExternalLink, Eye, Gauge, LayoutDashboard, Link2, LoaderCircle, MessageCircle, Play, Plus, Radio, RefreshCw, Settings, Sparkles, ThumbsUp, Timer, Trash2, TrendingUp, Tv, UploadCloud, Users } from 'lucide-react';
+import type { ChannelAnalytics, DashboardData, JobStatus } from '@/lib/types';
 
 const statusLabels: Record<JobStatus, string> = { queued: 'Queued', downloading: 'Downloading', transcribing: 'Transcribing', selecting: 'Selecting moments', rendering: 'Rendering clips', uploading: 'Publishing', complete: 'Published', failed: 'Needs attention' };
 const stageOrder: JobStatus[] = ['downloading', 'transcribing', 'selecting', 'rendering', 'uploading', 'complete'];
@@ -51,7 +51,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
   return <main className="app-shell">
     <aside className="sidebar">
       <Link className="brand" href="/"><span className="brand-mark"><Play size={15} fill="currentColor" /></span>ClipForge <em>Cloud</em></Link>
-      <nav className="side-nav"><a className="active" href="#overview"><LayoutDashboard /> Overview</a>{destination && <><a href="#jobs"><Activity /> Jobs <span>{data.jobs.length}</span></a><a href="#clips"><Captions /> Clips</a><a href="#channels"><Tv /> Sources <span>{data.sourceChannels.length}</span></a></>}</nav>
+      <nav className="side-nav"><a className="active" href="#overview"><LayoutDashboard /> Overview</a>{destination && <><a href="#analytics"><BarChart3 /> Analytics</a><a href="#jobs"><Activity /> Jobs <span>{data.jobs.length}</span></a><a href="#clips"><Captions /> Clips</a><a href="#channels"><Tv /> Sources <span>{data.sourceChannels.length}</span></a></>}</nav>
       <div className="side-bottom"><a href="#settings"><Settings /> Settings</a><div className="account-chip"><UserButton /><div><b>{data.tenant.name}</b><small>{data.tenant.email}</small></div></div></div>
     </aside>
 
@@ -79,10 +79,93 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
           </div>
         </>}
 
+        <AnalyticsPanel destinationId={destination.id} />
+
         <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && <><button className="button button-ghost" onClick={() => startCheckout('monthly')} disabled={saving}>$49 monthly</button><button className="button button-primary" onClick={() => startCheckout('annual')} disabled={saving}>$520 yearly · Save $68 <ArrowRight /></button></>}</div></section>
       </>}
     </section>
   </main>;
+}
+
+function compactNumber(value: number) {
+  return Intl.NumberFormat('en', { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
+}
+
+function durationLabel(seconds: number) {
+  const rounded = Math.round(seconds);
+  return rounded < 60 ? `${rounded}s` : `${Math.floor(rounded / 60)}m ${rounded % 60}s`;
+}
+
+function AnalyticsPanel({ destinationId }: { destinationId: string }) {
+  const [range, setRange] = useState<7 | 28 | 90>(28);
+  const [analytics, setAnalytics] = useState<ChannelAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setError('');
+    fetch(`/api/analytics?range=${range}${refresh ? '&refresh=1' : ''}`, { signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Analytics could not be loaded');
+        return body as ChannelAnalytics;
+      })
+      .then((body) => setAnalytics(body))
+      .catch((reason) => { if (reason.name !== 'AbortError') setError(reason.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [destinationId, range, refresh]);
+
+  const peakViews = Math.max(1, ...(analytics?.trend.map((day) => day.views) || [1]));
+  const bestShort = analytics?.shorts[0];
+
+  return <section className="analytics-panel" id="analytics">
+    <div className="analytics-heading">
+      <div><p className="overline">YouTube performance</p><h2>Channel analytics</h2><p>See what grows the destination channel, then reuse the winning patterns.</p></div>
+      <div className="analytics-controls">
+        <div className="range-tabs">{([7, 28, 90] as const).map((days) => <button className={range === days ? 'active' : ''} key={days} onClick={() => setRange(days)}>{days}D</button>)}</div>
+        <button className="refresh-button" aria-label="Refresh analytics" title="Refresh from YouTube" onClick={() => setRefresh((value) => value + 1)} disabled={loading}><RefreshCw className={loading ? 'spin' : ''} /></button>
+      </div>
+    </div>
+
+    {loading && !analytics ? <div className="analytics-loading"><LoaderCircle className="spin" /><b>Syncing YouTube Analytics…</b><p>Views, watch time, engagement, and subscriber growth are loading.</p></div> : error ? <div className="analytics-error"><BarChart3 /><div><b>Analytics need attention</b><p>{error}</p></div><a className="button button-dark" href="/api/auth/youtube/start">Reconnect YouTube</a></div> : analytics && <>
+      <div className="channel-total-row">
+        <span><Users /> <b>{analytics.channelTotals.subscribers === null ? 'Hidden' : compactNumber(analytics.channelTotals.subscribers)}</b> subscribers</span>
+        <span><Eye /> <b>{compactNumber(analytics.channelTotals.lifetimeViews)}</b> lifetime views</span>
+        <span><Captions /> <b>{compactNumber(analytics.channelTotals.videos)}</b> public videos</span>
+        <small>Updated {new Date(analytics.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · through {new Date(`${analytics.endDate}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' })}</small>
+      </div>
+
+      <div className="analytics-kpis">
+        <article><span className="metric-icon green"><Eye /></span><div><small>Views</small><b>{compactNumber(analytics.summary.views)}</b><p>last {range} days</p></div></article>
+        <article><span className="metric-icon purple"><Timer /></span><div><small>Watch time</small><b>{compactNumber(Math.round(analytics.summary.watchMinutes / 60))}h</b><p>{durationLabel(analytics.summary.averageViewDuration)} average view</p></div></article>
+        <article><span className="metric-icon orange"><Users /></span><div><small>Net subscribers</small><b>{analytics.summary.netSubscribers > 0 ? '+' : ''}{compactNumber(analytics.summary.netSubscribers)}</b><p>{analytics.summary.subscribersGained} gained · {analytics.summary.subscribersLost} lost</p></div></article>
+        <article><span className="metric-icon red"><ThumbsUp /></span><div><small>Engagement</small><b>{analytics.summary.engagementRate}%</b><p>{compactNumber(analytics.summary.likes)} likes · {compactNumber(analytics.summary.comments)} comments</p></div></article>
+      </div>
+
+      <div className="analytics-layout">
+        <article className="analytics-card trend-card">
+          <div className="analytics-card-title"><div><small>DAILY VIEWS</small><h3>{compactNumber(analytics.summary.views)} total</h3></div><TrendingUp /></div>
+          <div className="views-chart" aria-label={`Daily views over ${range} days`}>{analytics.trend.map((day) => <i key={day.date} title={`${new Date(`${day.date}T12:00:00`).toLocaleDateString()}: ${day.views.toLocaleString()} views`} style={{ height: `${Math.max(3, day.views / peakViews * 100)}%` }} />)}</div>
+          <div className="chart-axis"><span>{new Date(`${analytics.startDate}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span><span>{new Date(`${analytics.endDate}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span></div>
+        </article>
+        <article className="analytics-card insight-card">
+          <small>WHAT’S WORKING</small>
+          {bestShort ? <><h3>{bestShort.title}</h3><p>Your leading ClipForge Short generated <b>{compactNumber(bestShort.views)} views</b>, {compactNumber(bestShort.likes)} likes, and {bestShort.subscribersGained} subscribers in this period.</p><a href={bestShort.url} target="_blank">Watch top Short <ExternalLink /></a></> : <><h3>Performance signals are collecting</h3><p>Once ClipForge-published Shorts receive views, their retention and engagement will appear here for comparison.</p></>}
+        </article>
+      </div>
+
+      <article className="short-performance">
+        <div className="analytics-card-title"><div><small>CLIPFORGE OUTPUT</small><h3>Short performance</h3></div><span>{analytics.shorts.length} tracked</span></div>
+        {analytics.shorts.length ? <div className="short-table">
+          <div className="short-table-head"><span>Short</span><span>Views</span><span>Avg view</span><span>Likes</span><span>Comments</span><span>Subs</span></div>
+          {analytics.shorts.map((short, index) => <a href={short.url} target="_blank" key={short.videoId} className="short-table-row"><span><b>#{index + 1}</b><em>{short.title}</em></span><span>{compactNumber(short.views)}</span><span>{durationLabel(short.averageViewDuration)}</span><span><ThumbsUp /> {compactNumber(short.likes)}</span><span><MessageCircle /> {compactNumber(short.comments)}</span><span>{short.subscribersGained ? `+${short.subscribersGained}` : '—'}</span></a>)}
+        </div> : <div className="analytics-empty"><BarChart3 /><b>No ClipForge Short data in this period yet</b><p>Channel-level views still appear above. Per-Short results populate after uploads receive traffic.</p></div>}
+      </article>
+    </>}
+  </section>;
 }
 
 function EmptyOnboarding({ name }: { name: string }) {

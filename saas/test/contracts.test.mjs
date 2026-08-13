@@ -21,6 +21,23 @@ test('OAuth requests offline upload access', () => {
   assert.match(route, /access_type: 'offline'/);
   assert.match(youtube, /youtube\.upload/);
   assert.match(youtube, /openid/);
+  assert.match(youtube, /yt-analytics\.readonly/);
+});
+
+test('dashboard monitors decision-ready YouTube analytics with a quota cache', () => {
+  const analytics = readFileSync(new URL('../lib/analytics.ts', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('../app/api/analytics/route.ts', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../migrations/005_channel_analytics.sql', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(analytics, /estimatedMinutesWatched/);
+  assert.match(analytics, /averageViewDuration/);
+  assert.match(analytics, /subscribersGained/);
+  assert.match(analytics, /dimensions: 'video'/);
+  assert.match(route, /tenantIdFromSession/);
+  assert.match(route, /cachedChannelAnalytics/);
+  assert.match(migration, /channel_analytics_snapshots/);
+  assert.match(dashboard, /7, 28, 90/);
+  assert.match(dashboard, /Short performance/);
 });
 
 test('Clerk provisions the account before destination YouTube OAuth', () => {
