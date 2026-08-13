@@ -1,0 +1,19 @@
+.pricing-section {
+  align-items: stretch;
+  gap: 22px;
+}
+
+.pricing-section > div:first-child {
+  grid-column: 1 / -1;
+  margin-bottom: 20px;
+}
+
+.pricing-section h2 {
+  max-width: 680px;
+}
+
+@media (max-width: 760px) {
+  .pricing-section > div:first-child {
+    margin-bottom: 0;
+  }
+}

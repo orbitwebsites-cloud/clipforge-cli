@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { ClerkProvider } from '@clerk/nextjs';
 import './globals.css';
+import './pricing.css';
 
 export const metadata: Metadata = {
   title: 'ClipForge Cloud — Your long videos, working overtime',
