@@ -70,7 +70,7 @@ export async function resolveYouTubeChannel(rawInput: string) {
     || html.match(/youtube\.com\/channel\/(UC[\w-]+)/)?.[1];
   if (!youtubeChannelId) throw new Error('Could not identify that YouTube channel. Paste its @handle, channel link, or a video from the channel.');
   const decodedTitle = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') || (handle ? `@${handle}` : 'YouTube channel');
-  return { youtubeChannelId, title: decodedTitle, handle: handle ? `@${handle}` : null, url: directId ? `https://www.youtube.com/channel/${youtubeChannelId}` : url.toString() };
+  return { youtubeChannelId, platform: 'youtube' as const, platformUserId: youtubeChannelId, platformLogin: handle || null, title: decodedTitle, handle: handle ? `@${handle}` : null, url: directId ? `https://www.youtube.com/channel/${youtubeChannelId}` : url.toString() };
 }
 
 export async function subscribeWebSub(channel: StoredChannel | StoredSourceChannel) {

@@ -1,6 +1,6 @@
 # ClipForge Cloud
 
-Multi-tenant SaaS control plane for the existing ClipForge captioned-Shorts engine.
+Multi-tenant SaaS control plane for the existing ClipForge captioned-Shorts engine. It monitors YouTube uploads and completed livestream replays plus Twitch VODs, then publishes captioned clips to a connected YouTube destination.
 
 ## Customer flow
 
@@ -28,6 +28,7 @@ Open `http://localhost:3000/dashboard`. `DEMO_MODE=true` uses the in-memory demo
 1. Create PostgreSQL and apply `migrations/001_initial.sql`.
 2. Set `DATABASE_URL`, a 32-byte `TOKEN_ENCRYPTION_KEY`, `SESSION_SECRET`, and `WORKER_SECRET`.
 3. Configure a Google Web Application OAuth client. Add `https://YOUR_DOMAIN/api/auth/youtube/callback` as an authorized redirect URI and request YouTube upload/read/analytics verification.
+4. Configure a Twitch Developer Console application with OAuth redirect URL `https://YOUR_DOMAIN/api/webhooks/twitch`, then set `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, and a random `TWITCH_EVENTSUB_SECRET` (20-100 characters).
 4. Configure Stripe products/prices and send webhooks to `/api/billing/webhook`.
 5. Deploy the Next.js control plane to a public HTTPS domain; WebSub cannot reach localhost.
 6. Start one or more media workers on machines with FFmpeg and the ClipForge runtime:

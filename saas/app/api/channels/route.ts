@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { addSourceChannel, getDashboard, removeSourceChannel } from '@/lib/repository';
 import { tenantIdFromSession } from '@/lib/session';
 import { resolveYouTubeChannel, subscribeWebSub } from '@/lib/youtube';
+import { isTwitchInput, resolveTwitchChannel, subscribeTwitchEventSub } from '@/lib/twitch';
 
 const inputSchema = z.object({ url: z.string().trim().min(1, 'Enter a YouTube channel link or @handle.').max(500) });
 
@@ -12,11 +13,12 @@ export async function POST(request: Request) {
     const dashboard = await getDashboard(tenantId);
     const destination = dashboard.channels[0];
     if (!destination) return Response.json({ error: 'Connect YouTube first.' }, { status: 409 });
-    const resolved = await resolveYouTubeChannel(url);
-    const alreadyConnected = dashboard.sourceChannels.find((source) => source.youtubeChannelId === resolved.youtubeChannelId);
+    const resolved = isTwitchInput(url) ? await resolveTwitchChannel(url) : await resolveYouTubeChannel(url);
+    const alreadyConnected = dashboard.sourceChannels.find((source) => source.platform === resolved.platform && source.platformUserId === resolved.platformUserId);
     if (alreadyConnected) return Response.json({ ok: true, alreadyConnected: true, message: `${alreadyConnected.title} is already connected. Paste a different channel to add another source.`, dashboard });
     const source = await addSourceChannel(tenantId, destination.id, resolved);
-    await subscribeWebSub(source);
+    if (source.platform === 'twitch') await subscribeTwitchEventSub(source);
+    else await subscribeWebSub(source);
     const updated = await getDashboard(tenantId);
     return Response.json({ ok: true, message: `${source.title} connected (${updated.sourceChannels.length}/${updated.tenant.sourceChannelLimit} sources).`, dashboard: updated });
   } catch (error) {

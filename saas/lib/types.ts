@@ -1,4 +1,5 @@
 export type Plan = 'free' | 'creator' | 'studio';
+export type SourcePlatform = 'youtube' | 'twitch';
 export type JobStatus = 'queued' | 'downloading' | 'transcribing' | 'selecting' | 'rendering' | 'uploading' | 'complete' | 'failed';
 
 export type Channel = {
@@ -21,6 +22,9 @@ export type SourceChannel = {
   id: string;
   tenantId: string;
   youtubeChannelId: string;
+  platform: SourcePlatform;
+  platformUserId: string;
+  platformLogin: string | null;
   title: string;
   handle: string | null;
   url: string;

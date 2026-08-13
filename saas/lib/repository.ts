@@ -62,7 +62,7 @@ async function resetMonthlyUsage(tenantId?: string) {
 
 const mapChannel = (row: any): StoredChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, title: row.title, handle: row.handle, sourceUrl: row.source_url, connected: row.connected, webhookSecret: row.webhook_secret, refreshTokenEncrypted: row.refresh_token_encrypted, createdAt: row.created_at.toISOString?.() || row.created_at });
 const publicChannel = ({ webhookSecret: _webhookSecret, refreshTokenEncrypted: _refreshToken, ...channel }: StoredChannel): Channel => channel;
-const mapSourceChannel = (row: any): StoredSourceChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, title: row.title, handle: row.handle, url: row.url, connected: row.connected, webhookSecret: row.webhook_secret, destinationChannelId: row.destination_channel_id, createdAt: row.created_at.toISOString?.() || row.created_at });
+const mapSourceChannel = (row: any): StoredSourceChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, platform: row.platform || 'youtube', platformUserId: row.platform_user_id || row.youtube_channel_id, platformLogin: row.platform_login || null, title: row.title, handle: row.handle, url: row.url, connected: row.connected, webhookSecret: row.webhook_secret, destinationChannelId: row.destination_channel_id, createdAt: row.created_at.toISOString?.() || row.created_at });
 const publicSourceChannel = ({ webhookSecret: _webhookSecret, destinationChannelId: _destination, ...channel }: StoredSourceChannel) => channel;
 const mapClip = (row: any) => ({ id: row.id, jobId: row.job_id, title: row.title, durationSeconds: Number(row.duration_seconds), youtubeVideoId: row.youtube_video_id, youtubeUrl: row.youtube_url, status: row.status });
 const mapJob = (row: any, clips: any[] = []): Job => ({ id: row.id, tenantId: row.tenant_id, channelId: row.channel_id, sourceVideoId: row.source_video_id, sourceTitle: row.source_title, sourceUrl: row.source_url, status: row.status, progress: Number(row.progress), detectedAt: row.detected_at.toISOString?.() || row.detected_at, deadlineAt: row.deadline_at.toISOString?.() || row.deadline_at, startedAt: row.started_at?.toISOString?.() || row.started_at, completedAt: row.completed_at?.toISOString?.() || row.completed_at, error: row.error, leaseOwner: row.lease_owner, leaseExpiresAt: row.lease_expires_at?.toISOString?.() || row.lease_expires_at, clips });
@@ -86,7 +86,7 @@ export async function saveConnectedChannel(tenantId: string, input: { youtubeCha
   return destination;
 }
 
-export async function addSourceChannel(tenantId: string, destinationChannelId: string, input: { youtubeChannelId: string; title: string; handle: string | null; url: string }) {
+export async function addSourceChannel(tenantId: string, destinationChannelId: string, input: { youtubeChannelId: string; platform: 'youtube' | 'twitch'; platformUserId: string; platformLogin: string | null; title: string; handle: string | null; url: string }) {
   const webhookSecret = randomBytes(24).toString('base64url');
   if (!databaseEnabled()) {
     const existing = demoStore().sourceChannels.find((source) => source.tenantId === tenantId && source.youtubeChannelId === input.youtubeChannelId);
@@ -96,17 +96,17 @@ export async function addSourceChannel(tenantId: string, destinationChannelId: s
     if (!tenant || count >= tenant.sourceChannelLimit) throw new Error(`${tenant?.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${tenant?.sourceChannelLimit || 1} source channel${(tenant?.sourceChannelLimit || 1) === 1 ? '' : 's'}.`);
     return demoAddSourceChannel(tenantId, { ...input, destinationChannelId, connected: true, webhookSecret });
   }
-  const existing = await query<any>('select * from source_channels where tenant_id=$1 and youtube_channel_id=$2', [tenantId, input.youtubeChannelId]);
+  const existing = await query<any>('select * from source_channels where tenant_id=$1 and platform=$2 and platform_user_id=$3', [tenantId, input.platform, input.platformUserId]);
   if (existing.rows[0]) return mapSourceChannel(existing.rows[0]);
   const allowance = await query<any>(`select t.plan,t.source_channel_limit,count(s.id)::int as source_count
     from tenants t left join source_channels s on s.tenant_id=t.id where t.id=$1 group by t.id`, [tenantId]);
   const limits = allowance.rows[0];
   if (!limits) throw new Error('Account not found');
   if (Number(limits.source_count) >= Number(limits.source_channel_limit)) throw new Error(`${limits.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${limits.source_channel_limit} source channel${Number(limits.source_channel_limit) === 1 ? '' : 's'}.`);
-  const result = await query<any>(`insert into source_channels (id,tenant_id,destination_channel_id,youtube_channel_id,title,handle,url,connected,webhook_secret)
-    values ($1,$2,$3,$4,$5,$6,$7,true,$8)
-    on conflict (tenant_id,youtube_channel_id) do update set title=excluded.title,handle=excluded.handle,url=excluded.url,connected=true,destination_channel_id=excluded.destination_channel_id
-    returning *`, [randomUUID(), tenantId, destinationChannelId, input.youtubeChannelId, input.title, input.handle, input.url, webhookSecret]);
+  const result = await query<any>(`insert into source_channels (id,tenant_id,destination_channel_id,youtube_channel_id,platform,platform_user_id,platform_login,title,handle,url,connected,webhook_secret)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11)
+    on conflict (tenant_id,youtube_channel_id) do update set platform=excluded.platform,platform_user_id=excluded.platform_user_id,platform_login=excluded.platform_login,title=excluded.title,handle=excluded.handle,url=excluded.url,connected=true,destination_channel_id=excluded.destination_channel_id
+    returning *`, [randomUUID(), tenantId, destinationChannelId, input.youtubeChannelId, input.platform, input.platformUserId, input.platformLogin, input.title, input.handle, input.url, webhookSecret]);
   return mapSourceChannel(result.rows[0]);
 }
 
@@ -121,18 +121,24 @@ export async function removeSourceChannel(tenantId: string, sourceId: string) {
 }
 
 export async function webhookSourceChannel(channelId: string, secret: string) {
-  if (!databaseEnabled()) return demoStore().sourceChannels.find((source) => source.youtubeChannelId === channelId && source.webhookSecret === secret) || null;
-  const result = await query<any>('select * from source_channels where youtube_channel_id=$1 and webhook_secret=$2', [channelId, secret]);
+  if (!databaseEnabled()) return demoStore().sourceChannels.find((source) => source.platform === 'youtube' && source.platformUserId === channelId && source.webhookSecret === secret) || null;
+  const result = await query<any>("select * from source_channels where platform='youtube' and platform_user_id=$1 and webhook_secret=$2", [channelId, secret]);
   return result.rows[0] ? mapSourceChannel(result.rows[0]) : null;
 }
 
-export async function enqueueVideo(source: StoredSourceChannel, video: { id: string; title: string; publishedAt?: string }) {
+export async function platformSourceChannels(platform: 'youtube' | 'twitch', platformUserId: string) {
+  if (!databaseEnabled()) return demoStore().sourceChannels.filter((source) => source.platform === platform && source.platformUserId === platformUserId && source.connected);
+  const result = await query<any>('select * from source_channels where platform=$1 and platform_user_id=$2 and connected=true', [platform, platformUserId]);
+  return result.rows.map(mapSourceChannel);
+}
+
+export async function enqueueVideo(source: StoredSourceChannel, video: { id: string; title: string; publishedAt?: string; url?: string }) {
   const detectedAt = new Date();
   const plan = databaseEnabled()
     ? (await query<{ plan: string }>('select plan from tenants where id=$1', [source.tenantId])).rows[0]?.plan
     : demoStore().tenants.find((tenant) => tenant.id === source.tenantId)?.plan;
   const targetMinutes = plan === 'free' ? 1440 : 180;
-  const base = { tenantId: source.tenantId, channelId: source.destinationChannelId, sourceVideoId: video.id, sourceTitle: video.title, sourceUrl: `https://youtube.com/watch?v=${video.id}`, detectedAt: detectedAt.toISOString(), deadlineAt: new Date(detectedAt.getTime() + targetMinutes * 60000).toISOString() };
+  const base = { tenantId: source.tenantId, channelId: source.destinationChannelId, sourceVideoId: video.id, sourceTitle: video.title, sourceUrl: video.url || `https://youtube.com/watch?v=${video.id}`, detectedAt: detectedAt.toISOString(), deadlineAt: new Date(detectedAt.getTime() + targetMinutes * 60000).toISOString() };
   if (!databaseEnabled()) return demoEnqueue(base);
   const result = await query<any>(`insert into jobs (id,tenant_id,channel_id,source_video_id,source_title,source_url,status,progress,detected_at,deadline_at)
     values ($1,$2,$3,$4,$5,$6,'queued',0,$7,$8) on conflict (tenant_id,source_video_id) do update set source_title=excluded.source_title returning *`, [randomUUID(), base.tenantId, base.channelId, base.sourceVideoId, base.sourceTitle, base.sourceUrl, base.detectedAt, base.deadlineAt]);

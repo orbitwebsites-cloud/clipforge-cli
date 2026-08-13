@@ -101,3 +101,16 @@ test('source input accepts handles and reports duplicate channels clearly', () =
   assert.match(route, /is already connected/);
   assert.match(dashboard, /body\.message/);
 });
+
+test('Twitch sources use official Helix, signed EventSub, and VOD polling fallback', () => {
+  const twitch = readFileSync(new URL('../lib/twitch.ts', import.meta.url), 'utf8');
+  const webhook = readFileSync(new URL('../app/api/webhooks/twitch/route.ts', import.meta.url), 'utf8');
+  const poll = readFileSync(new URL('../app/api/cron/poll-youtube/route.ts', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../migrations/004_multiplatform_sources.sql', import.meta.url), 'utf8');
+  assert.match(twitch, /api\.twitch\.tv\/helix/);
+  assert.match(twitch, /stream\.offline/);
+  assert.match(webhook, /createHmac\('sha256'/);
+  assert.match(webhook, /timingSafeEqual/);
+  assert.match(poll, /latestTwitchVods/);
+  assert.match(migration, /platform in \('youtube','twitch'\)/);
+});
