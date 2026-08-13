@@ -1,0 +1,24 @@
+databases:
+  - name: clipforge-cloud-db
+    databaseName: clipforge
+    user: clipforge
+    plan: free
+    region: ohio
+
+services:
+  - type: worker
+    name: clipforge-media-worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./saas/Dockerfile.worker
+    envVars:
+      - key: CONTROL_PLANE_URL
+        value: https://saas-puce-one-84.vercel.app
+      - key: WORKER_SECRET
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: WORKER_POLL_MS
+        value: "15000"

@@ -1,0 +1,31 @@
+{
+  "name": "clipforge-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "worker": "node worker/clip-worker.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.7.4",
+    "lucide-react": "1.31.0",
+    "next": "16.3.0",
+    "pg": "8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "stripe": "22.5.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,14 @@
+.env
+out/
+work/
+node_modules/
+saas/.next/
+saas/node_modules/
+saas/.env*
+saas/.vercel/
+saas/.clerk/
+saas/.whop-login-*
+saas/worker-data/
+saas/*.tsbuildinfo
+reports/
+tmp/

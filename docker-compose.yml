@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: clipforge
+      POSTGRES_USER: clipforge
+      POSTGRES_PASSWORD: local-development-only
+    volumes:
+      - clipforge_db:/var/lib/postgresql/data
+      - ./saas/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  web:
+    build:
+      context: .
+      dockerfile: saas/Dockerfile.web
+    env_file: ./saas/.env.production
+    environment:
+      DATABASE_URL: postgres://clipforge:local-development-only@postgres:5432/clipforge
+      PORT: 3000
+    ports: ["3000:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  worker:
+    build:
+      context: .
+      dockerfile: saas/Dockerfile.worker
+    env_file: ./saas/.env.production
+    environment:
+      CONTROL_PLANE_URL: http://web:3000
+    volumes:
+      - clipforge_media:/app/work
+      - clipforge_output:/app/out
+    depends_on: [web]
+
+volumes:
+  clipforge_db:
+  clipforge_media:
+  clipforge_output:

@@ -1,0 +1,17 @@
+{
+  "name": "clipforge-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless CLI + Deepgram/Cerebras router for ClipForge",
+  "bin": { "cfc": "./src/cli.js" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node test/analyze-smoke.js && node test/proxy-smoke.js && node test/render-smoke.js",
+    "test:deepgram": "node test/deepgram-smoke.js",
+    "test:rank": "node test/live-global-rank.mjs",
+    "doctor": "node src/cli.js doctor",
+    "proxy": "node src/cli.js proxy",
+    "launch": "node src/cli.js launch"
+  }
+}
