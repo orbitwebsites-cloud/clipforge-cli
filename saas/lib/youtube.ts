@@ -1,5 +1,6 @@
 import type { StoredChannel, StoredSourceChannel } from './types';
 import { appUrl } from './app-url';
+import { channelIdFromChannelHtml, channelIdFromVideoHtml, youtubeVideoIdFromUrl } from './youtube-identity';
 
 export const YOUTUBE_SCOPES = [
   'openid',
@@ -48,6 +49,7 @@ export function normalizeYouTubeChannelInput(rawInput: string) {
   if (input.startsWith('@')) return `https://www.youtube.com/${input}`;
   if (/^[\w.-]+$/.test(input)) return `https://www.youtube.com/@${input}`;
   if (/^(?:www\.|m\.)?youtube\.com\//i.test(input)) return `https://${input}`;
+  if (/^(?:www\.)?youtu\.be\//i.test(input)) return `https://${input}`;
   return input;
 }
 
@@ -55,19 +57,29 @@ export async function resolveYouTubeChannel(rawInput: string) {
   let url: URL;
   try { url = new URL(normalizeYouTubeChannelInput(rawInput)); }
   catch { throw new Error('Enter a YouTube channel link or @handle.'); }
-  if (!['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname.toLowerCase())) throw new Error('Enter a youtube.com channel link or @handle.');
+  if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'www.youtu.be'].includes(url.hostname.toLowerCase())) throw new Error('Enter a youtube.com channel, video, Short, or stream link.');
   const directId = url.pathname.match(/^\/channel\/(UC[\w-]{20,})/)?.[1];
   const handle = url.pathname.match(/^\/@([^/?]+)/)?.[1];
-  let html = '';
-  if (!directId || !handle) {
-    const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 ClipForge/1.0' }, cache: 'no-store', redirect: 'follow' });
-    if (!response.ok) throw new Error(response.status === 404 ? 'YouTube could not find that channel. Check the @handle and try again.' : `YouTube channel returned ${response.status}`);
-    html = await response.text();
+  const videoId = youtubeVideoIdFromUrl(url);
+  if (videoId) {
+    const videoUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    const oembed = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`, { cache: 'no-store' });
+    if (oembed.ok) {
+      const owner = await oembed.json() as { author_url?: string };
+      if (owner.author_url) return resolveYouTubeChannel(owner.author_url);
+    }
+    const response = await fetch(videoUrl, { headers: { 'user-agent': 'Mozilla/5.0 ClipForge/1.0' }, cache: 'no-store', redirect: 'follow' });
+    if (!response.ok) throw new Error(`YouTube video returned ${response.status}`);
+    const html = await response.text();
+    const uploaderId = channelIdFromVideoHtml(html);
+    if (!uploaderId) throw new Error('Could not identify the YouTube channel that published that video.');
+    return resolveYouTubeChannel(`https://www.youtube.com/channel/${uploaderId}`);
   }
-  const youtubeChannelId = directId
-    || html.match(/"channelId":"(UC[\w-]+)"/)?.[1]
-    || html.match(/<meta itemprop="channelId" content="(UC[\w-]+)"/)?.[1]
-    || html.match(/youtube\.com\/channel\/(UC[\w-]+)/)?.[1];
+
+  const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 ClipForge/1.0' }, cache: 'no-store', redirect: 'follow' });
+  if (!response.ok) throw new Error(response.status === 404 ? 'YouTube could not find that channel. Check the @handle and try again.' : `YouTube channel returned ${response.status}`);
+  const html = await response.text();
+  const youtubeChannelId = directId || channelIdFromChannelHtml(html);
   if (!youtubeChannelId) throw new Error('Could not identify that YouTube channel. Paste its @handle, channel link, or a video from the channel.');
   const decodedTitle = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') || (handle ? `@${handle}` : 'YouTube channel');
   return { youtubeChannelId, platform: 'youtube' as const, platformUserId: youtubeChannelId, platformLogin: handle || null, title: decodedTitle, handle: handle ? `@${handle}` : null, url: directId ? `https://www.youtube.com/channel/${youtubeChannelId}` : url.toString() };

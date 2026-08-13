@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { channelIdFromChannelHtml, channelIdFromVideoHtml, youtubeVideoIdFromUrl } from '../lib/youtube-identity.ts';
+
+test('YouTube identity extraction ignores unrelated recommendation channels', () => {
+  const unrelated = 'UCPLMPHT-d8GZOqL_AHJFdQQ';
+  const actual = 'UCk2uxbWi5py_iJXaEsh2YRA';
+  const channelHtml = `<script>{"channelId":"${unrelated}"}</script><link rel="canonical" href="https://www.youtube.com/channel/${actual}">`;
+  const videoHtml = `<script>{"channelId":"${unrelated}","videoDetails":{"videoId":"abc123","channelId":"${actual}"}}</script>`;
+  assert.equal(channelIdFromChannelHtml(channelHtml), actual);
+  assert.equal(channelIdFromVideoHtml(videoHtml), actual);
+  assert.equal(youtubeVideoIdFromUrl(new URL('https://youtu.be/abc123')), 'abc123');
+  assert.equal(youtubeVideoIdFromUrl(new URL('https://youtube.com/shorts/abc123')), 'abc123');
+  assert.equal(youtubeVideoIdFromUrl(new URL('https://youtube.com/live/abc123')), 'abc123');
+});
 
 test('database enforces idempotent source-video jobs', () => {
   const sql = readFileSync(new URL('../migrations/001_initial.sql', import.meta.url), 'utf8');
@@ -120,10 +133,16 @@ test('annual Creator checkout saves $68 and domain migration preserves Google OA
 
 test('source input accepts handles and reports duplicate channels clearly', () => {
   const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
+  const identity = readFileSync(new URL('../lib/youtube-identity.ts', import.meta.url), 'utf8');
   const route = readFileSync(new URL('../app/api/channels/route.ts', import.meta.url), 'utf8');
   const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
   assert.match(youtube, /normalizeYouTubeChannelInput/);
   assert.match(youtube, /input\.startsWith\('@'\)/);
+  assert.match(youtube, /youtubeVideoIdFromUrl/);
+  assert.match(youtube, /youtube\.com\/oembed/);
+  assert.match(identity, /rel="canonical"/);
+  assert.match(identity, /channelMetadataRenderer/);
+  assert.doesNotMatch(youtube, /html\.match\(\/"channelId"/);
   assert.match(route, /alreadyConnected/);
   assert.match(route, /is already connected/);
   assert.match(dashboard, /body\.message/);
