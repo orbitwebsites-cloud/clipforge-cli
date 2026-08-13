@@ -90,3 +90,14 @@ test('annual Creator checkout saves $68 and domain migration preserves Google OA
   assert.match(landing, /\$520\/year/);
   assert.match(landing, /Save \$68/);
 });
+
+test('source input accepts handles and reports duplicate channels clearly', () => {
+  const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('../app/api/channels/route.ts', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(youtube, /normalizeYouTubeChannelInput/);
+  assert.match(youtube, /input\.startsWith\('@'\)/);
+  assert.match(route, /alreadyConnected/);
+  assert.match(route, /is already connected/);
+  assert.match(dashboard, /body\.message/);
+});

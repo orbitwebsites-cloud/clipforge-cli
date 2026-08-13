@@ -29,7 +29,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
     event.preventDefault(); setSaving(true); setNotice('');
     const response = await fetch('/api/channels', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: sourceUrl }) });
     const body = await response.json(); setSaving(false);
-    setNotice(response.ok ? 'Source connected. New uploads are now monitored.' : body.error || 'Could not connect source.');
+    setNotice(response.ok ? body.message || 'Source connected. New uploads are now monitored.' : body.error || 'Could not connect source.');
     if (body.dashboard) { setData(body.dashboard); setSourceUrl(''); }
   }
 
@@ -74,7 +74,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
 
             <section className="panel setup-panel" id="channels"><div className="panel-header"><div><p className="overline">Input channels</p><h2>Clip sources</h2></div><span className="step-count">{data.sourceChannels.length} active</span></div>
               <div className="source-list">{data.sourceChannels.map((source) => <div className="source-item" key={source.id}><span><Radio /></span><div><b>{source.title}</b><p>{source.handle || source.youtubeChannelId}</p></div><button aria-label={`Remove ${source.title}`} onClick={() => removeSource(source.id)} disabled={saving}><Trash2 /></button></div>)}</div>
-              <form className="channel-form" onSubmit={addSource}><label htmlFor="channel"><Link2 /> Add another source channel</label><div><input id="channel" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://youtube.com/@creator" required /><button disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <Plus />}</button></div><small>Public uploads and completed livestream replays are monitored.</small></form>{notice && <p className="form-notice">{notice}</p>}
+              <form className="channel-form" onSubmit={addSource}><label htmlFor="channel"><Link2 /> Add another source channel</label><div><input id="channel" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="@creator or youtube.com/@creator" required /><button disabled={saving || data.sourceChannels.length >= data.tenant.sourceChannelLimit}>{saving ? <LoaderCircle className="spin" /> : <Plus />}</button></div><small>Paste a different channel each time. Handles, channel links, /videos links, and video links all work.</small></form>{notice && <p className="form-notice">{notice}</p>}
             </section>
           </div>
         </>}
@@ -90,5 +90,5 @@ function EmptyOnboarding({ name }: { name: string }) {
 }
 
 function SourceOnboarding({ destination, sourceUrl, setSourceUrl, addSource, saving, notice }: { destination: string; sourceUrl: string; setSourceUrl: (value: string) => void; addSource: (event: React.FormEvent) => void; saving: boolean; notice: string }) {
-  return <section className="onboarding-empty source-onboarding" id="channels"><div className="onboarding-orbit connected"><span><Check /></span></div><p className="overline">Destination connected</p><h1>Now choose where clips come from.</h1><p>Finished Shorts will post to <b>{destination}</b>. Add one or more public YouTube channels for ClipForge to monitor.</p><form className="onboarding-form" onSubmit={addSource}><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://youtube.com/@sourcechannel" required /><button className="button button-primary" disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <>Connect source <ArrowRight /></>}</button></form>{notice && <p className="form-notice">{notice}</p>}<small>You can add or remove more source channels later.</small></section>;
+  return <section className="onboarding-empty source-onboarding" id="channels"><div className="onboarding-orbit connected"><span><Check /></span></div><p className="overline">Destination connected</p><h1>Now choose where clips come from.</h1><p>Finished Shorts will post to <b>{destination}</b>. Add one or more public YouTube channels for ClipForge to monitor.</p><form className="onboarding-form" onSubmit={addSource}><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="@sourcechannel or YouTube channel link" required /><button className="button button-primary" disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <>Connect source <ArrowRight /></>}</button></form>{notice && <p className="form-notice">{notice}</p>}<small>Use an @handle, channel link, /videos link, or any video from that channel.</small></section>;
 }

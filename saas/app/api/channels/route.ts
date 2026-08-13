@@ -3,7 +3,7 @@ import { addSourceChannel, getDashboard, removeSourceChannel } from '@/lib/repos
 import { tenantIdFromSession } from '@/lib/session';
 import { resolveYouTubeChannel, subscribeWebSub } from '@/lib/youtube';
 
-const inputSchema = z.object({ url: z.string().url().refine((value) => new URL(value).hostname.endsWith('youtube.com'), 'Enter a YouTube channel URL') });
+const inputSchema = z.object({ url: z.string().trim().min(1, 'Enter a YouTube channel link or @handle.').max(500) });
 
 export async function POST(request: Request) {
   try {
@@ -12,11 +12,15 @@ export async function POST(request: Request) {
     const dashboard = await getDashboard(tenantId);
     const destination = dashboard.channels[0];
     if (!destination) return Response.json({ error: 'Connect YouTube first.' }, { status: 409 });
-    const source = await addSourceChannel(tenantId, destination.id, await resolveYouTubeChannel(url));
+    const resolved = await resolveYouTubeChannel(url);
+    const alreadyConnected = dashboard.sourceChannels.find((source) => source.youtubeChannelId === resolved.youtubeChannelId);
+    if (alreadyConnected) return Response.json({ ok: true, alreadyConnected: true, message: `${alreadyConnected.title} is already connected. Paste a different channel to add another source.`, dashboard });
+    const source = await addSourceChannel(tenantId, destination.id, resolved);
     await subscribeWebSub(source);
-    return Response.json({ ok: true, dashboard: await getDashboard(tenantId) });
+    const updated = await getDashboard(tenantId);
+    return Response.json({ ok: true, message: `${source.title} connected (${updated.sourceChannels.length}/${updated.tenant.sourceChannelLimit} sources).`, dashboard: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid channel';
+    const message = error instanceof z.ZodError ? error.issues[0]?.message : error instanceof Error ? error.message : 'Invalid channel';
     return Response.json({ error: message }, { status: 400 });
   }
 }

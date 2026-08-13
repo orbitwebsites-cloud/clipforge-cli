@@ -42,24 +42,35 @@ export async function googleUserProfile(accessToken: string) {
   return { email: body.email as string, name: (body.name || body.email.split('@')[0]) as string };
 }
 
-export async function resolveYouTubeChannel(rawUrl: string) {
-  const url = new URL(rawUrl);
-  if (!['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname.toLowerCase())) throw new Error('Enter a youtube.com channel URL');
+export function normalizeYouTubeChannelInput(rawInput: string) {
+  const input = rawInput.trim();
+  if (!input) throw new Error('Enter a YouTube channel link or @handle.');
+  if (input.startsWith('@')) return `https://www.youtube.com/${input}`;
+  if (/^[\w.-]+$/.test(input)) return `https://www.youtube.com/@${input}`;
+  if (/^(?:www\.|m\.)?youtube\.com\//i.test(input)) return `https://${input}`;
+  return input;
+}
+
+export async function resolveYouTubeChannel(rawInput: string) {
+  let url: URL;
+  try { url = new URL(normalizeYouTubeChannelInput(rawInput)); }
+  catch { throw new Error('Enter a YouTube channel link or @handle.'); }
+  if (!['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname.toLowerCase())) throw new Error('Enter a youtube.com channel link or @handle.');
   const directId = url.pathname.match(/^\/channel\/(UC[\w-]{20,})/)?.[1];
   const handle = url.pathname.match(/^\/@([^/?]+)/)?.[1];
   let html = '';
   if (!directId || !handle) {
     const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 ClipForge/1.0' }, cache: 'no-store', redirect: 'follow' });
-    if (!response.ok) throw new Error(`YouTube channel returned ${response.status}`);
+    if (!response.ok) throw new Error(response.status === 404 ? 'YouTube could not find that channel. Check the @handle and try again.' : `YouTube channel returned ${response.status}`);
     html = await response.text();
   }
   const youtubeChannelId = directId
     || html.match(/"channelId":"(UC[\w-]+)"/)?.[1]
     || html.match(/<meta itemprop="channelId" content="(UC[\w-]+)"/)?.[1]
     || html.match(/youtube\.com\/channel\/(UC[\w-]+)/)?.[1];
-  if (!youtubeChannelId) throw new Error('Could not resolve that YouTube channel. Use its /channel/UC... URL.');
+  if (!youtubeChannelId) throw new Error('Could not identify that YouTube channel. Paste its @handle, channel link, or a video from the channel.');
   const decodedTitle = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') || (handle ? `@${handle}` : 'YouTube channel');
-  return { youtubeChannelId, title: decodedTitle, handle: handle ? `@${handle}` : null, url: directId ? `https://www.youtube.com/channel/${youtubeChannelId}` : rawUrl };
+  return { youtubeChannelId, title: decodedTitle, handle: handle ? `@${handle}` : null, url: directId ? `https://www.youtube.com/channel/${youtubeChannelId}` : url.toString() };
 }
 
 export async function subscribeWebSub(channel: StoredChannel | StoredSourceChannel) {
