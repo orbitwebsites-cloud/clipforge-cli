@@ -47,10 +47,18 @@ export async function resolveTwitchChannel(rawInput: string) {
   try { url = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`); }
   catch { throw new Error('Enter a Twitch channel link such as twitch.tv/creator.'); }
   if (!['twitch.tv', 'www.twitch.tv'].includes(url.hostname.toLowerCase())) throw new Error('Enter a twitch.tv channel link.');
-  const login = url.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
-  if (!login || ['videos', 'directory', 'downloads'].includes(login)) throw new Error('Enter a Twitch creator channel link, not a Twitch section link.');
-  const user = (await helix(`users?login=${encodeURIComponent(login)}`)).data?.[0];
-  if (!user) throw new Error(`Twitch could not find ${login}. Check the channel link and try again.`);
+  const segments = url.pathname.split('/').filter(Boolean);
+  let user: any;
+  if (segments[0]?.toLowerCase() === 'videos' && /^\d+$/.test(segments[1] || '')) {
+    const video = (await helix(`videos?id=${encodeURIComponent(segments[1])}`)).data?.[0];
+    if (!video?.user_id) throw new Error('Twitch could not find that VOD. It may be private or expired.');
+    user = (await helix(`users?id=${encodeURIComponent(video.user_id)}`)).data?.[0];
+  } else {
+    const login = segments[0]?.toLowerCase();
+    if (!login || ['directory', 'downloads'].includes(login)) throw new Error('Enter a Twitch creator channel or VOD link.');
+    user = (await helix(`users?login=${encodeURIComponent(login)}`)).data?.[0];
+  }
+  if (!user) throw new Error('Twitch could not find that creator. Check the channel or VOD link and try again.');
   return { youtubeChannelId: `twitch:${user.id}`, platform: 'twitch' as const, platformUserId: user.id as string, platformLogin: user.login as string, title: (user.display_name || user.login) as string, handle: user.login as string, url: `https://www.twitch.tv/${user.login}` };
 }
 

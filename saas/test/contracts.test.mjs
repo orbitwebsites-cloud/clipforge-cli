@@ -109,6 +109,7 @@ test('Twitch sources use official Helix, signed EventSub, and VOD polling fallba
   const migration = readFileSync(new URL('../migrations/004_multiplatform_sources.sql', import.meta.url), 'utf8');
   assert.match(twitch, /api\.twitch\.tv\/helix/);
   assert.match(twitch, /stream\.offline/);
+  assert.match(twitch, /videos\?id=/);
   assert.match(webhook, /createHmac\('sha256'/);
   assert.match(webhook, /timingSafeEqual/);
   assert.match(poll, /latestTwitchVods/);
