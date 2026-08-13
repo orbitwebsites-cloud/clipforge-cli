@@ -20,11 +20,12 @@ export async function getDashboard(tenantId: string): Promise<DashboardData> {
   const jobs = jobResult.rows.map((row: any) => mapJob(row, clipsByJob.get(row.id) || []));
   const completed = jobs.filter((job: Job) => job.completedAt);
   const minutes = completed.map((job: Job) => (new Date(job.completedAt!).getTime() - new Date(job.detectedAt).getTime()) / 60000);
+  const targetMinutes = tenant.plan === 'free' ? 1440 : 180;
   return {
     tenant: { id: tenant.id, name: tenant.name, email: tenant.email, plan: tenant.plan, subscriptionStatus: tenant.subscription_status, stripeCustomerId: tenant.stripe_customer_id, clipsThisMonth: Number(tenant.clips_this_month), monthlyClipLimit: Number(tenant.monthly_clip_limit), sourceChannelLimit: Number(tenant.source_channel_limit), complimentaryCreator: Boolean(tenant.complimentary_creator) },
     channels: channelResult.rows.map(mapChannel).map(publicChannel),
     sourceChannels: sourceResult.rows.map(mapSourceChannel).map(publicSourceChannel), jobs,
-    sla: { targetMinutes: 180, deliveredOnTimePercent: minutes.length ? Math.round(100 * minutes.filter((m) => m <= 180).length / minutes.length) : 100, averageMinutes: minutes.length ? Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length) : 0 },
+    sla: { targetMinutes, deliveredOnTimePercent: minutes.length ? Math.round(100 * minutes.filter((m) => m <= targetMinutes).length / minutes.length) : 100, averageMinutes: minutes.length ? Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length) : 0 },
   };
 }
 
@@ -127,7 +128,11 @@ export async function webhookSourceChannel(channelId: string, secret: string) {
 
 export async function enqueueVideo(source: StoredSourceChannel, video: { id: string; title: string; publishedAt?: string }) {
   const detectedAt = new Date();
-  const base = { tenantId: source.tenantId, channelId: source.destinationChannelId, sourceVideoId: video.id, sourceTitle: video.title, sourceUrl: `https://youtube.com/watch?v=${video.id}`, detectedAt: detectedAt.toISOString(), deadlineAt: new Date(detectedAt.getTime() + 180 * 60000).toISOString() };
+  const plan = databaseEnabled()
+    ? (await query<{ plan: string }>('select plan from tenants where id=$1', [source.tenantId])).rows[0]?.plan
+    : demoStore().tenants.find((tenant) => tenant.id === source.tenantId)?.plan;
+  const targetMinutes = plan === 'free' ? 1440 : 180;
+  const base = { tenantId: source.tenantId, channelId: source.destinationChannelId, sourceVideoId: video.id, sourceTitle: video.title, sourceUrl: `https://youtube.com/watch?v=${video.id}`, detectedAt: detectedAt.toISOString(), deadlineAt: new Date(detectedAt.getTime() + targetMinutes * 60000).toISOString() };
   if (!databaseEnabled()) return demoEnqueue(base);
   const result = await query<any>(`insert into jobs (id,tenant_id,channel_id,source_video_id,source_title,source_url,status,progress,detected_at,deadline_at)
     values ($1,$2,$3,$4,$5,$6,'queued',0,$7,$8) on conflict (tenant_id,source_video_id) do update set source_title=excluded.source_title returning *`, [randomUUID(), base.tenantId, base.channelId, base.sourceVideoId, base.sourceTitle, base.sourceUrl, base.detectedAt, base.deadlineAt]);
@@ -149,7 +154,7 @@ export async function leaseNextJob(workerId: string) {
   const result = await query<any>(`with candidate as (
       select j.id,t.monthly_clip_limit-t.clips_this_month as max_uploads from jobs j join tenants t on t.id=j.tenant_id
       where t.clips_this_month<t.monthly_clip_limit and (j.status='queued' or (j.status not in ('complete','failed') and j.lease_expires_at < now()))
-      order by j.deadline_at asc for update of j skip locked limit 1
+      order by case when t.plan in ('creator','studio') then 0 else 1 end,j.deadline_at asc for update of j skip locked limit 1
     ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '10 minutes'
     from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads`, [workerId]);
   return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads) } : null;

@@ -70,3 +70,12 @@ test('free and creator plan limits are enforced by the backend', () => {
   assert.match(migration, /source_channel_limit=5/);
   assert.match(migration, /complimentary_creator/);
 });
+
+test('Creator jobs receive priority queueing and truthful three-hour positioning', () => {
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  const landing = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  assert.match(repository, /t\.plan in \('creator','studio'\)/);
+  assert.match(repository, /plan === 'free' \? 1440 : 180/);
+  assert.match(landing, /Priority queue with 3-hour target/);
+  assert.match(landing, /150 published Shorts monthly/);
+});

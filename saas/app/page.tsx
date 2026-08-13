@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Captions, Clock3, Play, Sparkles, Tv } from 'lucide-react';
+import { ArrowRight, Captions, Check, Clock3, Play, Sparkles, Tv, Zap } from 'lucide-react';
 
 export default function HomePage() {
   return (
@@ -14,12 +14,12 @@ export default function HomePage() {
       <section className="hero">
         <div className="eyebrow"><Sparkles size={14} /> Built for creators who ship</div>
         <h1>Your long videos,<br /><span>working overtime.</span></h1>
-        <p>Connect your YouTube channel once. Every new upload or stream replay becomes a batch of captioned Shorts—selected, rendered, and posted within three hours.</p>
+        <p>Connect your YouTube channels once. ClipForge finds the strongest moments, adds sharp captions, and publishes the Shorts for you. Creator jobs get priority delivery within three hours.</p>
         <div className="hero-actions">
-          <Link className="button button-primary button-large" href="/sign-up">Create your account <ArrowRight size={18} /></Link>
+          <Link className="button button-primary button-large" href="/sign-up">Create My First Shorts <ArrowRight size={18} /></Link>
           <a className="button button-ghost button-large" href="#how">See how it works</a>
         </div>
-        <div className="hero-proof"><span><i className="pulse" /> 3-hour delivery target</span><span>No custom voiceovers</span><span>Cancel anytime</span></div>
+        <div className="hero-proof"><span><i className="pulse" /> Creator priority queue</span><span>Original audio + captions</span><span>Direct YouTube publishing</span></div>
       </section>
 
       <section className="pipeline-preview" id="how">
@@ -41,9 +41,15 @@ export default function HomePage() {
       </section>
 
       <section className="pricing-section" id="pricing">
-        <div><p className="overline">Simple pricing</p><h2>One upload can become a week of content.</h2></div>
-        <div className="price-card"><div><span>Free</span><h3>$0<small>/month</small></h3><p>10 published Shorts monthly, one destination, and one source channel.</p></div><Link className="button button-ghost" href="/sign-up">Start free <ArrowRight size={17} /></Link></div>
-        <div className="price-card"><div><span>Creator</span><h3>$49<small>/month</small></h3><p>Up to 150 published Shorts monthly, one destination, five source channels, and a three-hour processing target.</p></div><Link className="button button-primary" href="/sign-up">Start 7-day trial <ArrowRight size={17} /></Link></div>
+        <div><p className="overline">Simple pricing</p><h2>Choose how fast you want to grow.</h2><p className="pricing-intro">Start free. Upgrade when Shorts become part of your growth engine.</p></div>
+        <article className="price-card free-plan"><div><span>Free</span><h3>$0<small>/month</small></h3><p>Test the full workflow on one channel.</p><ul><li><Check /> 10 published Shorts monthly</li><li><Check /> 1 monitored source channel</li><li><Check /> Automatic captions and publishing</li><li><Check /> Standard processing queue</li></ul></div><Link className="button button-ghost" href="/sign-up">Start Free <ArrowRight size={17} /></Link></article>
+        <article className="price-card creator-plan"><div><span className="popular-label"><Zap /> Most popular</span><h3>$49<small>/month</small></h3><p>For creators who want a dependable Shorts engine running every day.</p><ul><li><Check /> 150 published Shorts monthly</li><li><Check /> 5 monitored source channels</li><li><Check /> Priority queue with 3-hour target</li><li><Check /> New uploads + livestream replays</li><li><Check /> Original audio with burned captions</li><li><Check /> Direct automatic YouTube publishing</li></ul></div><Link className="button button-primary" href="/sign-up">Try Creator Free for 7 Days <ArrowRight size={17} /></Link></article>
+      </section>
+
+      <section className="creator-proof">
+        <div><p className="overline">Built for consistent output</p><h2>Creator keeps publishing while you keep creating.</h2></div>
+        <div className="creator-benefits"><article><b>5×</b><h3>More sources</h3><p>Monitor your main channel, stream archive, podcast, and collaborator channels from one dashboard.</p></article><article><b>15×</b><h3>More monthly output</h3><p>Move from 10 free Shorts to as many as 150 published Shorts every month.</p></article><article><b>&lt;3h</b><h3>Priority delivery target</h3><p>Creator jobs move ahead of the standard queue so timely uploads stay timely.</p></article></div>
+        <Link className="button button-primary button-large" href="/sign-up">Start the 7-Day Creator Trial <ArrowRight size={18} /></Link>
       </section>
       <footer><span>© 2026 ClipForge Cloud</span><span>Built around YouTube’s official OAuth and push APIs.</span></footer>
     </main>

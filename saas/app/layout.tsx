@@ -4,8 +4,15 @@ import './globals.css';
 import './pricing.css';
 
 export const metadata: Metadata = {
-  title: 'ClipForge Cloud — Your long videos, working overtime',
-  description: 'Turn every upload and stream replay into captioned YouTube Shorts within three hours.',
+  title: 'ClipForge Cloud | Automatic YouTube Shorts for Creators',
+  description: 'Automatically turn new YouTube uploads and livestream replays into captioned Shorts, then publish them directly to your channel.',
+  openGraph: {
+    title: 'Turn every YouTube upload into captioned Shorts',
+    description: 'Connect your channels once. ClipForge finds the moments, adds captions, and publishes the Shorts for you.',
+    type: 'website',
+    url: 'https://saas-puce-one-84.vercel.app',
+    siteName: 'ClipForge Cloud',
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

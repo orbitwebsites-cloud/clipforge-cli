@@ -12,8 +12,155 @@
   max-width: 680px;
 }
 
+.pricing-intro {
+  max-width: 620px;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.price-card {
+  align-items: stretch;
+  flex-direction: column;
+  min-height: 520px;
+}
+
+.price-card ul {
+  display: grid;
+  gap: 13px;
+  margin: 25px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.price-card li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #d8d9d3;
+  font-size: 13px;
+}
+
+.price-card li svg {
+  width: 16px;
+  color: var(--lime);
+}
+
+.price-card > .button {
+  width: 100%;
+}
+
+.free-plan {
+  border: 1px solid #dedfd8;
+  background: #fff;
+  color: var(--ink);
+}
+
+.free-plan p,
+.free-plan li {
+  color: var(--muted);
+}
+
+.creator-plan {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(200, 255, 56, .45);
+  box-shadow: 0 28px 70px rgba(23, 23, 19, .18);
+}
+
+.creator-plan::after {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  right: -100px;
+  top: -110px;
+  border-radius: 50%;
+  background: rgba(200, 255, 56, .12);
+  content: '';
+}
+
+.popular-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.popular-label svg {
+  width: 14px;
+}
+
+.creator-proof {
+  max-width: 1080px;
+  margin: 0 auto 120px;
+  padding: 58px;
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  background: #fff;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.creator-proof > div:first-child {
+  display: grid;
+  justify-items: center;
+}
+
+.creator-proof h2 {
+  max-width: 720px;
+  margin: 15px auto 38px;
+  font: 800 46px/1.08 'Manrope';
+  letter-spacing: -.055em;
+}
+
+.creator-benefits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 30px;
+  text-align: left;
+}
+
+.creator-benefits article {
+  padding: 25px;
+  border-radius: 20px;
+  background: #f6f7f2;
+}
+
+.creator-benefits b {
+  color: #76952e;
+  font: 800 32px 'Manrope';
+}
+
+.creator-benefits h3 {
+  margin: 9px 0;
+  font: 800 18px 'Manrope';
+}
+
+.creator-benefits p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 @media (max-width: 760px) {
   .pricing-section > div:first-child {
     margin-bottom: 0;
+  }
+
+  .price-card {
+    min-height: auto;
+  }
+
+  .creator-proof {
+    margin: 0 15px 70px;
+    padding: 35px 20px;
+  }
+
+  .creator-proof h2 {
+    font-size: 35px;
+  }
+
+  .creator-benefits {
+    grid-template-columns: 1fr;
   }
 }
