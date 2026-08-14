@@ -199,6 +199,21 @@ test('billing makes upgrade and cancellation equally discoverable', () => {
   assert.match(dashboard, /no email or support ticket required/);
 });
 
+test('owner accounts receive lifetime complimentary Clipping without checkout', () => {
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  const webhook = readFileSync(new URL('../app/api/billing/webhook/route.ts', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../migrations/009_complimentary_clipping_accounts.sql', import.meta.url), 'utf8');
+  assert.match(repository, /complimentary \? 'clipping'/);
+  assert.match(repository, /complimentary \? 15 : 1/);
+  assert.match(webhook, /complimentary_creator then 'clipping'/);
+  assert.match(dashboard, /Lifetime access · \$0/);
+  assert.match(dashboard, /data\.tenant\.complimentaryCreator \|\| \['clipping','studio'\]/);
+  assert.match(migration, /rrus3676@gmail\.com/);
+  assert.match(migration, /orbitboyzz@gmail\.com/);
+  assert.match(migration, /source_channel_limit=15/);
+});
+
 test('source input accepts handles and reports duplicate channels clearly', () => {
   const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
   const identity = readFileSync(new URL('../lib/youtube-identity.ts', import.meta.url), 'utf8');

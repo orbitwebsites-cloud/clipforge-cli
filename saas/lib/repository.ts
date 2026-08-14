@@ -39,19 +39,19 @@ export async function ensureTenant(id: string, profile: { email: string; name: s
     const existing = store.tenants.find((tenant) => tenant.id === id);
     if (existing) {
       Object.assign(existing, { name: profile.name, email: profile.email });
-      if (complimentary) Object.assign(existing, { plan: 'creator', subscriptionStatus: 'active', monthlyClipLimit: 150, sourceChannelLimit: 5, complimentaryCreator: true });
+      if (complimentary) Object.assign(existing, { plan: 'clipping', subscriptionStatus: 'active', monthlyClipLimit: 150, sourceChannelLimit: 15, complimentaryCreator: true });
       return existing;
     }
-    const tenant = { id, name: profile.name, email: profile.email, plan: complimentary ? 'creator' as const : 'free' as const, subscriptionStatus: 'active' as const, stripeCustomerId: null, clipsThisMonth: 0, monthlyClipLimit: complimentary ? 150 : 10, sourceChannelLimit: complimentary ? 5 : 1, complimentaryCreator: complimentary };
+    const tenant = { id, name: profile.name, email: profile.email, plan: complimentary ? 'clipping' as const : 'free' as const, subscriptionStatus: 'active' as const, stripeCustomerId: null, clipsThisMonth: 0, monthlyClipLimit: complimentary ? 150 : 10, sourceChannelLimit: complimentary ? 15 : 1, complimentaryCreator: complimentary };
     store.tenants.push(tenant); return tenant;
   }
   const result = await query<any>(`insert into tenants (id,name,email,plan,subscription_status,monthly_clip_limit,source_channel_limit,complimentary_creator)
-    values ($1,$2,$3,case when $4 then 'creator' else 'free' end,'active',case when $4 then 150 else 10 end,case when $4 then 5 else 1 end,$4)
+    values ($1,$2,$3,case when $4 then 'clipping' else 'free' end,'active',case when $4 then 150 else 10 end,case when $4 then 15 else 1 end,$4)
     on conflict (id) do update set name=excluded.name,email=excluded.email,
-      plan=case when tenants.complimentary_creator or excluded.complimentary_creator then 'creator' else tenants.plan end,
+      plan=case when tenants.complimentary_creator or excluded.complimentary_creator then 'clipping' else tenants.plan end,
       subscription_status=case when tenants.complimentary_creator or excluded.complimentary_creator then 'active' else tenants.subscription_status end,
       monthly_clip_limit=case when tenants.complimentary_creator or excluded.complimentary_creator then 150 else tenants.monthly_clip_limit end,
-      source_channel_limit=case when tenants.complimentary_creator or excluded.complimentary_creator then 5 else tenants.source_channel_limit end,
+      source_channel_limit=case when tenants.complimentary_creator or excluded.complimentary_creator then 15 else tenants.source_channel_limit end,
       complimentary_creator=tenants.complimentary_creator or excluded.complimentary_creator returning *`, [id, profile.name, profile.email, complimentary]);
   return result.rows[0];
 }
