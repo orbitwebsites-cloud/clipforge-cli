@@ -10,7 +10,11 @@ test('Linux worker uses python3 and refuses to lease jobs without yt-dlp', () =>
 
   assert.match(dockerfile, /CFC_PYTHON=\/usr\/bin\/python3/);
   assert.match(dockerfile, /python3 -m yt_dlp --version/);
+  assert.match(dockerfile, /bgutil-ytdlp-pot-provider==1\.3\.1/);
+  assert.match(dockerfile, /CFC_YTDLP_POT_SERVER_HOME/);
   assert.match(download, /process\.platform === 'win32' \? 'python' : 'python3'/);
+  assert.match(download, /--js-runtimes/);
+  assert.match(download, /youtubepot-bgutilscript:server_home/);
   assert.match(discover, /process\.platform === 'win32' \? 'python' : 'python3'/);
   assert.match(worker, /await ytdlpVersion\(\)/);
   assert.match(worker, /Worker startup failed: yt-dlp is unavailable/);

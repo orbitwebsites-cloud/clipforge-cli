@@ -4,6 +4,11 @@ import { paths } from './config.js';
 import { run, ensureDir } from './ffmpeg.js';
 
 const PY = process.env.CFC_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+const YTDLP_RUNTIME_ARGS = ['--js-runtimes', `node:${process.execPath}`];
+const potServerHome = process.env.CFC_YTDLP_POT_SERVER_HOME;
+if (potServerHome) {
+  YTDLP_RUNTIME_ARGS.push('--extractor-args', `youtubepot-bgutilscript:server_home=${potServerHome}`);
+}
 
 export async function ytdlpVersion() {
   try {
@@ -24,14 +29,14 @@ export const isUrl = (s) => /^https?:\/\//i.test(s);
 export async function download(url, workDir, { log = () => {}, maxHeight = 1080 } = {}) {
   const dir = ensureDir(path.join(workDir, 'download'));
 
-  const { out: titleOut } = await run(PY, ['-m', 'yt_dlp', '--no-playlist', '--print', '%(title)s', '--skip-download', url]);
+  const { out: titleOut } = await run(PY, ['-m', 'yt_dlp', ...YTDLP_RUNTIME_ARGS, '--no-playlist', '--print', '%(title)s', '--skip-download', url]);
   const title = titleOut.trim().split('\n').pop() || 'video';
   log(`  "${title}"`);
 
   await run(
     PY,
     [
-      '-m', 'yt_dlp',
+      '-m', 'yt_dlp', ...YTDLP_RUNTIME_ARGS,
       '--no-playlist',
       '--no-progress',
       '-f', `bv*[height<=${maxHeight}]+ba/b[height<=${maxHeight}]/bv*+ba/b`,
