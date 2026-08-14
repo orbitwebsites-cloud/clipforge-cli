@@ -3,6 +3,8 @@ import { databaseEnabled, query } from './db';
 import { defaultCreatorPreferences, demoAddChannel, demoAddSourceChannel, demoDashboard, demoEnqueue, demoStore } from './demo-store';
 import type { Channel, ChannelAnalytics, CreatorPreferences, DashboardData, Job, JobStatus, StoredChannel, StoredSourceChannel } from './types';
 
+const planLabel = (plan?: string) => plan ? `${plan[0].toUpperCase()}${plan.slice(1)}` : 'Free';
+
 export async function getDashboard(tenantId: string): Promise<DashboardData> {
   if (!databaseEnabled()) return demoDashboard(tenantId);
   await resetMonthlyUsage(tenantId);
@@ -97,7 +99,7 @@ export async function addSourceChannel(tenantId: string, destinationChannelId: s
     if (existing) return existing;
     const tenant = demoStore().tenants.find((item) => item.id === tenantId);
     const count = demoStore().sourceChannels.filter((source) => source.tenantId === tenantId).length;
-    if (!tenant || count >= tenant.sourceChannelLimit) throw new Error(`${tenant?.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${tenant?.sourceChannelLimit || 1} source channel${(tenant?.sourceChannelLimit || 1) === 1 ? '' : 's'}.`);
+    if (!tenant || count >= tenant.sourceChannelLimit) throw new Error(`${planLabel(tenant?.plan)} plan allows ${tenant?.sourceChannelLimit || 1} source channel${(tenant?.sourceChannelLimit || 1) === 1 ? '' : 's'}.`);
     return demoAddSourceChannel(tenantId, { ...input, destinationChannelId, connected: true, webhookSecret });
   }
   const existing = await query<any>('select * from source_channels where tenant_id=$1 and platform=$2 and platform_user_id=$3', [tenantId, input.platform, input.platformUserId]);
@@ -106,7 +108,7 @@ export async function addSourceChannel(tenantId: string, destinationChannelId: s
     from tenants t left join source_channels s on s.tenant_id=t.id where t.id=$1 group by t.id`, [tenantId]);
   const limits = allowance.rows[0];
   if (!limits) throw new Error('Account not found');
-  if (Number(limits.source_count) >= Number(limits.source_channel_limit)) throw new Error(`${limits.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${limits.source_channel_limit} source channel${Number(limits.source_channel_limit) === 1 ? '' : 's'}.`);
+  if (Number(limits.source_count) >= Number(limits.source_channel_limit)) throw new Error(`${planLabel(limits.plan)} plan allows ${limits.source_channel_limit} source channel${Number(limits.source_channel_limit) === 1 ? '' : 's'}.`);
   const result = await query<any>(`insert into source_channels (id,tenant_id,destination_channel_id,youtube_channel_id,platform,platform_user_id,platform_login,title,handle,url,connected,webhook_secret,rights_confirmed)
     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11,$12)
     on conflict (tenant_id,youtube_channel_id) do update set platform=excluded.platform,platform_user_id=excluded.platform_user_id,platform_login=excluded.platform_login,title=excluded.title,handle=excluded.handle,url=excluded.url,connected=true,destination_channel_id=excluded.destination_channel_id,rights_confirmed=excluded.rights_confirmed
@@ -173,7 +175,7 @@ export async function leaseNextJob(workerId: string) {
         (select a.data from channel_analytics_snapshots a where a.channel_id=j.channel_id order by a.synced_at desc limit 1) as performance_data
       from jobs j join tenants t on t.id=j.tenant_id
       where t.clips_this_month<t.monthly_clip_limit and (j.status='queued' or (j.status not in ('complete','failed') and j.lease_expires_at < now()))
-      order by case when t.plan in ('creator','studio') then 0 else 1 end,j.deadline_at asc for update of j skip locked limit 1
+      order by case when t.plan in ('creator','clipping','studio') then 0 else 1 end,j.deadline_at asc for update of j skip locked limit 1
     ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '10 minutes'
     from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads,candidate.creator_preferences,candidate.performance_data`, [workerId]);
   return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads), preferences: { ...defaultCreatorPreferences, ...(result.rows[0].creator_preferences || {}) }, performanceData: result.rows[0].performance_data || null } : null;

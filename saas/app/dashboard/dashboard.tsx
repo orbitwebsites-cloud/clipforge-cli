@@ -42,9 +42,9 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
     if (!response.ok) setNotice(body.error || 'Could not remove source.');
   }
 
-  async function startCheckout(billingCycle: 'monthly' | 'annual' = 'monthly') {
+  async function startCheckout(plan: 'creator' | 'clipping', billingCycle: 'monthly' | 'annual' = 'monthly') {
     setSaving(true);
-    const response = await fetch('/api/billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: 'creator', billingCycle }) });
+    const response = await fetch('/api/billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan, billingCycle }) });
     const body = await response.json(); setSaving(false);
     if (body.url) window.location.href = body.url;
   }
@@ -93,7 +93,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
 
         <SettingsPanel initial={data.preferences} onSaved={(dashboard) => setData(dashboard)} />
 
-        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && <><button className="button button-ghost" onClick={() => startCheckout('monthly')} disabled={saving}>$49 monthly</button><button className="button button-primary" onClick={() => startCheckout('annual')} disabled={saving}>$520 yearly · Save $68 <ArrowRight /></button></>}</div></section>
+        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && data.tenant.plan === 'free' && <><button className="button button-ghost" onClick={() => startCheckout('creator')} disabled={saving}>Creator · $49</button><button className="button button-ghost" onClick={() => startCheckout('creator', 'annual')} disabled={saving}>Creator yearly · Save $68</button></>}{!data.tenant.complimentaryCreator && ['free','creator'].includes(data.tenant.plan) && <button className="button button-primary" onClick={() => startCheckout('clipping')} disabled={saving}>Clipping · $89 <ArrowRight /></button>}</div></section>
       </>}
     </section>
   </main>;

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     if (tenantId) await query(`update tenants set stripe_customer_id=$2,stripe_subscription_id=$3,
       plan=case when complimentary_creator then 'creator' else $4 end,subscription_status='active',
       monthly_clip_limit=case when complimentary_creator then 150 when $4='studio' then 500 else 150 end,
-      source_channel_limit=case when complimentary_creator then 5 when $4='studio' then 20 else 5 end where id=$1`, [tenantId, String(session.customer || ''), String(session.subscription || ''), session.metadata?.plan || 'creator']);
+      source_channel_limit=case when complimentary_creator then 5 when $4='studio' then 20 when $4='clipping' then 15 else 5 end where id=$1`, [tenantId, String(session.customer || ''), String(session.subscription || ''), session.metadata?.plan || 'creator']);
   }
   if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
     const subscription = event.data.object as Stripe.Subscription;

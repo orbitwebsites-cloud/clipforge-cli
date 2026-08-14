@@ -2,7 +2,7 @@ create table if not exists tenants (
   id text primary key,
   name text not null,
   email text not null unique,
-  plan text not null default 'free' check (plan in ('free','creator','studio')),
+  plan text not null default 'free' check (plan in ('free','creator','clipping','studio')),
   subscription_status text not null default 'active',
   stripe_customer_id text,
   stripe_subscription_id text,

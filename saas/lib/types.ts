@@ -1,4 +1,4 @@
-export type Plan = 'free' | 'creator' | 'studio';
+export type Plan = 'free' | 'creator' | 'clipping' | 'studio';
 export type SourcePlatform = 'youtube' | 'twitch';
 export type JobStatus = 'queued' | 'downloading' | 'transcribing' | 'selecting' | 'rendering' | 'uploading' | 'complete' | 'failed';
 

@@ -127,20 +127,23 @@ test('dashboard repository strips OAuth and webhook secrets', () => {
   assert.match(repository, /_refreshToken/);
 });
 
-test('free and creator plan limits are enforced by the backend', () => {
+test('free, creator, and clipping plan limits are enforced by the backend', () => {
   const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
   const migration = readFileSync(new URL('../migrations/003_plan_limits.sql', import.meta.url), 'utf8');
+  const clipping = readFileSync(new URL('../migrations/008_clipping_plan.sql', import.meta.url), 'utf8');
   assert.match(repository, /source_channel_limit/);
   assert.match(repository, /monthly_clip_limit/);
   assert.match(migration, /monthly_clip_limit=10/);
   assert.match(migration, /source_channel_limit=5/);
   assert.match(migration, /complimentary_creator/);
+  assert.match(clipping, /'clipping'/);
+  assert.match(clipping, /source_channel_limit=15/);
 });
 
 test('Creator jobs receive priority queueing and truthful three-hour positioning', () => {
   const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
   const landing = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-  assert.match(repository, /t\.plan in \('creator','studio'\)/);
+  assert.match(repository, /t\.plan in \('creator','clipping','studio'\)/);
   assert.match(repository, /plan === 'free' \? 1440 : 180/);
   assert.match(landing, /Priority queue with 3-hour target/);
   assert.match(landing, /150 published or review-ready Shorts monthly/);
@@ -155,6 +158,19 @@ test('annual Creator checkout saves $68 and domain migration preserves Google OA
   assert.match(youtube, /GOOGLE_OAUTH_REDIRECT_URI/);
   assert.match(landing, /\$520\/year/);
   assert.match(landing, /Save \$68/);
+});
+
+test('Clipping tier has a real $89 checkout and 15-source positioning', () => {
+  const checkout = readFileSync(new URL('../app/api/billing/checkout/route.ts', import.meta.url), 'utf8');
+  const webhook = readFileSync(new URL('../app/api/billing/webhook/route.ts', import.meta.url), 'utf8');
+  const landing = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(checkout, /WHOP_CLIPPING_CHECKOUT_URL/);
+  assert.match(checkout, /'clipping'/);
+  assert.match(webhook, /\$4='clipping' then 15/);
+  assert.match(landing, /\$89/);
+  assert.match(landing, /15 continuously monitored/);
+  assert.match(dashboard, /Clipping · \$89/);
 });
 
 test('source input accepts handles and reports duplicate channels clearly', () => {
