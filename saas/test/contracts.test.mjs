@@ -196,7 +196,7 @@ test('billing makes upgrade and cancellation equally discoverable', () => {
   assert.match(dashboard, /Upgrade plan/);
   assert.match(dashboard, /Manage or cancel subscription/);
   assert.match(dashboard, /whop\.com\/@me\/settings\/orders/);
-  assert.match(dashboard, /no email or support ticket required/);
+  assert.match(dashboard, /no email or\s+support ticket required/);
 });
 
 test('owner accounts receive lifetime complimentary Clipping without checkout', () => {
@@ -208,13 +208,13 @@ test('owner accounts receive lifetime complimentary Clipping without checkout', 
   assert.match(repository, /complimentary \? 15 : 1/);
   assert.match(webhook, /complimentary_creator then 'clipping'/);
   assert.match(dashboard, /Lifetime access · \$0/);
-  assert.match(dashboard, /data\.tenant\.complimentaryCreator \|\| \['clipping','studio'\]/);
+  assert.match(dashboard, /data\.tenant\.complimentaryCreator\s*\|\|\s*\[\s*'clipping',\s*'studio',?\s*\]/);
   assert.match(migration, /rrus3676@gmail\.com/);
   assert.match(migration, /orbitboyzz@gmail\.com/);
   assert.match(migration, /source_channel_limit=15/);
 });
 
-test('users can selectively backfill past source videos into the normal publishing queue', () => {
+test('users can selectively backfill past videos from multiple owned sources into one normal publishing batch', () => {
   const route = readFileSync(new URL('../app/api/videos/backfill/route.ts', import.meta.url), 'utf8');
   const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
   const twitch = readFileSync(new URL('../lib/twitch.ts', import.meta.url), 'utf8');
@@ -222,18 +222,26 @@ test('users can selectively backfill past source videos into the normal publishi
   const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
   assert.match(route, /tenantIdFromSession/);
   assert.match(route, /sourceChannelForTenant/);
+  assert.match(route, /sourceIds/);
+  assert.match(route, /selections: z\.array/);
   assert.match(route, /videoIds: z\.array/);
   assert.match(route, /\.max\(20\)/);
-  assert.match(route, /do not belong to this source/);
+  assert.match(route, /maximum of 20 videos per batch/);
+  assert.match(route, /do not belong to their source channel/);
+  assert.match(route, /accessTokenByDestination/);
+  assert.match(route, /Promise\.all\(sources\.map/);
   assert.match(route, /enqueueVideo/);
   assert.match(route, /alreadyQueued/);
   assert.match(youtube, /relatedPlaylists\?\.uploads/);
   assert.match(youtube, /youtube\/v3\/playlistItems/);
   assert.match(twitch, /Math\.min\(100/);
   assert.match(repository, /select \* from source_channels where id=\$1 and tenant_id=\$2/);
-  assert.match(dashboard, /Browse past videos/);
+  assert.match(dashboard, /Select source channels/);
+  assert.match(dashboard, /librarySourceIds/);
+  assert.match(dashboard, /JSON\.stringify\(\{ selections \}\)/);
+  assert.match(dashboard, /cross-channel batch/);
   assert.match(dashboard, /Analyze &amp; post selected/);
-  assert.match(dashboard, /maximum 20 per batch/);
+  assert.match(dashboard, /maximum 20\s+per batch/);
 });
 
 test('source input accepts handles and reports duplicate channels clearly', () => {
