@@ -214,6 +214,28 @@ test('owner accounts receive lifetime complimentary Clipping without checkout', 
   assert.match(migration, /source_channel_limit=15/);
 });
 
+test('users can selectively backfill past source videos into the normal publishing queue', () => {
+  const route = readFileSync(new URL('../app/api/videos/backfill/route.ts', import.meta.url), 'utf8');
+  const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
+  const twitch = readFileSync(new URL('../lib/twitch.ts', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(route, /tenantIdFromSession/);
+  assert.match(route, /sourceChannelForTenant/);
+  assert.match(route, /videoIds: z\.array/);
+  assert.match(route, /\.max\(20\)/);
+  assert.match(route, /do not belong to this source/);
+  assert.match(route, /enqueueVideo/);
+  assert.match(route, /alreadyQueued/);
+  assert.match(youtube, /relatedPlaylists\?\.uploads/);
+  assert.match(youtube, /youtube\/v3\/playlistItems/);
+  assert.match(twitch, /Math\.min\(100/);
+  assert.match(repository, /select \* from source_channels where id=\$1 and tenant_id=\$2/);
+  assert.match(dashboard, /Browse past videos/);
+  assert.match(dashboard, /Analyze &amp; post selected/);
+  assert.match(dashboard, /maximum 20 per batch/);
+});
+
 test('source input accepts handles and reports duplicate channels clearly', () => {
   const youtube = readFileSync(new URL('../lib/youtube.ts', import.meta.url), 'utf8');
   const identity = readFileSync(new URL('../lib/youtube-identity.ts', import.meta.url), 'utf8');

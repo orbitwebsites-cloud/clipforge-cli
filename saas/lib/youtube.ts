@@ -1,4 +1,4 @@
-import type { StoredChannel, StoredSourceChannel } from './types';
+import type { PastVideo, StoredChannel, StoredSourceChannel } from './types';
 import { appUrl } from './app-url';
 import { channelIdFromChannelHtml, channelIdFromVideoHtml, youtubeVideoIdFromUrl } from './youtube-identity';
 
@@ -46,6 +46,24 @@ export async function ownedYouTubeChannel(accessToken: string) {
   if (!response.ok || !body.items?.[0]) throw new Error('No YouTube channel was found for this Google account');
   const item = body.items[0];
   return { youtubeChannelId: item.id as string, title: item.snippet.title as string, handle: item.snippet.customUrl || null, sourceUrl: `https://www.youtube.com/channel/${item.id}` };
+}
+
+export async function youtubePastVideos(accessToken: string, channelId: string, limit = 30): Promise<PastVideo[]> {
+  const channelResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${encodeURIComponent(channelId)}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
+  const channelBody = await channelResponse.json();
+  const uploadsPlaylist = channelBody.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!channelResponse.ok || !uploadsPlaylist) throw new Error(channelBody.error?.message || 'YouTube could not load this source’s uploads playlist.');
+  const pageSize = Math.min(50, Math.max(1, limit));
+  const videosResponse = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${encodeURIComponent(uploadsPlaylist)}&maxResults=${pageSize}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
+  const videosBody = await videosResponse.json();
+  if (!videosResponse.ok) throw new Error(videosBody.error?.message || 'YouTube could not load past videos.');
+  return (videosBody.items || []).flatMap((item: any) => {
+    const id = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+    if (!id || ['Private video', 'Deleted video'].includes(item.snippet?.title)) return [];
+    const thumbnails = item.snippet?.thumbnails || {};
+    const thumbnailUrl = thumbnails.maxres?.url || thumbnails.standard?.url || thumbnails.high?.url || thumbnails.medium?.url || thumbnails.default?.url || null;
+    return [{ id, title: item.snippet?.title || 'YouTube video', url: `https://www.youtube.com/watch?v=${id}`, publishedAt: item.contentDetails?.videoPublishedAt || item.snippet?.publishedAt || '', thumbnailUrl, platform: 'youtube' as const }];
+  }).slice(0, pageSize);
 }
 
 export async function googleUserProfile(accessToken: string) {

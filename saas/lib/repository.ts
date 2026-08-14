@@ -145,6 +145,18 @@ export async function platformSourceChannels(platform: 'youtube' | 'twitch', pla
   return result.rows.map(mapSourceChannel);
 }
 
+export async function sourceChannelForTenant(tenantId: string, sourceId: string) {
+  if (!databaseEnabled()) return demoStore().sourceChannels.find((source) => source.tenantId === tenantId && source.id === sourceId && source.connected) || null;
+  const result = await query<any>('select * from source_channels where id=$1 and tenant_id=$2 and connected=true', [sourceId, tenantId]);
+  return result.rows[0] ? mapSourceChannel(result.rows[0]) : null;
+}
+
+export async function existingJobVideoIds(tenantId: string) {
+  if (!databaseEnabled()) return demoStore().jobs.filter((job) => job.tenantId === tenantId).map((job) => job.sourceVideoId);
+  const result = await query<{ source_video_id: string }>('select source_video_id from jobs where tenant_id=$1', [tenantId]);
+  return result.rows.map((row) => row.source_video_id);
+}
+
 export async function enqueueVideo(source: StoredSourceChannel, video: { id: string; title: string; publishedAt?: string; url?: string }) {
   const detectedAt = new Date();
   const plan = databaseEnabled()

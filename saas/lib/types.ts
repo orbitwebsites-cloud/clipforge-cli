@@ -60,6 +60,16 @@ export type CreatorPreferences = {
   learningEnabled: boolean;
 };
 
+export type PastVideo = {
+  id: string;
+  title: string;
+  url: string;
+  publishedAt: string;
+  thumbnailUrl: string | null;
+  platform: SourcePlatform;
+  alreadyQueued?: boolean;
+};
+
 export type Job = {
   id: string;
   tenantId: string;

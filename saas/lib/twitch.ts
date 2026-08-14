@@ -1,4 +1,4 @@
-import type { StoredSourceChannel } from './types';
+import type { PastVideo, StoredSourceChannel } from './types';
 import { appUrl } from './app-url';
 
 type TwitchToken = { value: string; expiresAt: number };
@@ -62,9 +62,10 @@ export async function resolveTwitchChannel(rawInput: string) {
   return { youtubeChannelId: `twitch:${user.id}`, platform: 'twitch' as const, platformUserId: user.id as string, platformLogin: user.login as string, title: (user.display_name || user.login) as string, handle: user.login as string, url: `https://www.twitch.tv/${user.login}` };
 }
 
-export async function latestTwitchVods(userId: string) {
-  const body = await helix(`videos?user_id=${encodeURIComponent(userId)}&type=archive&first=5`);
-  return (body.data || []).map((video: any) => ({ id: `twitch:${video.id}`, title: video.title || 'Twitch stream replay', publishedAt: video.created_at as string, url: video.url || `https://www.twitch.tv/videos/${video.id}` }));
+export async function latestTwitchVods(userId: string, limit = 5): Promise<PastVideo[]> {
+  const pageSize = Math.min(100, Math.max(1, limit));
+  const body = await helix(`videos?user_id=${encodeURIComponent(userId)}&type=archive&first=${pageSize}`);
+  return (body.data || []).map((video: any) => ({ id: `twitch:${video.id}`, title: video.title || 'Twitch stream replay', publishedAt: video.created_at as string, url: video.url || `https://www.twitch.tv/videos/${video.id}`, thumbnailUrl: video.thumbnail_url ? String(video.thumbnail_url).replace('%{width}', '640').replace('%{height}', '360') : null, platform: 'twitch' as const }));
 }
 
 export async function subscribeTwitchEventSub(source: StoredSourceChannel) {
