@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { UserButton, UserProfile } from '@clerk/nextjs';
 import {
@@ -74,6 +74,7 @@ type DashboardTab =
   | 'profile'
   | 'billing'
   | 'settings';
+type LiveSyncState = 'connecting' | 'live' | 'offline';
 type LibraryVideo = PastVideo & { sourceId: string; sourceTitle: string };
 const dashboardTabs = new Set<DashboardTab>([
   'overview',
@@ -94,9 +95,21 @@ function relative(value: string) {
   return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
 }
 
-export default function Dashboard({ initial }: { initial: DashboardData }) {
+export default function Dashboard({
+  initial,
+  initialTab,
+}: {
+  initial: DashboardData;
+  initialTab?: string;
+}) {
   const [data, setData] = useState(initial);
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
+    const requested = initialTab as DashboardTab;
+    return dashboardTabs.has(requested) ? requested : 'overview';
+  });
+  const [liveSyncState, setLiveSyncState] =
+    useState<LiveSyncState>('connecting');
+  const [lastSyncedAt, setLastSyncedAt] = useState(() => Date.now());
   const [sourceUrl, setSourceUrl] = useState('');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -105,6 +118,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
   const active = data.jobs.find(
     (job) => !['complete', 'failed'].includes(job.status),
   );
+  const hasProcessingJobs = Boolean(active);
   const completedClips = data.jobs
     .flatMap((job) => job.clips)
     .filter((clip) => ['uploaded', 'review'].includes(clip.status));
@@ -128,6 +142,59 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
     window.addEventListener('popstate', syncTab);
     return () => window.removeEventListener('popstate', syncTab);
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'jobs' && !hasProcessingJobs) return;
+
+    let disposed = false;
+    let controller: AbortController | null = null;
+    const syncDashboard = async () => {
+      if (document.visibilityState === 'hidden' || controller) return;
+      const requestController = new AbortController();
+      controller = requestController;
+      try {
+        const response = await fetch('/api/dashboard', {
+          cache: 'no-store',
+          signal: requestController.signal,
+        });
+        if (!response.ok) throw new Error('Dashboard sync failed');
+        const dashboard = (await response.json()) as DashboardData;
+        if (disposed) return;
+        setData(dashboard);
+        setLastSyncedAt(Date.now());
+        setLiveSyncState('live');
+      } catch (error) {
+        if (
+          !disposed &&
+          !(error instanceof DOMException && error.name === 'AbortError')
+        )
+          setLiveSyncState('offline');
+      } finally {
+        if (controller === requestController) controller = null;
+      }
+    };
+    const syncNow = () => void syncDashboard();
+
+    setLiveSyncState('connecting');
+    syncNow();
+    const interval = window.setInterval(
+      syncNow,
+      hasProcessingJobs ? 3000 : 8000,
+    );
+    const syncWhenVisible = () => {
+      if (document.visibilityState === 'visible') syncNow();
+    };
+    window.addEventListener('focus', syncNow);
+    document.addEventListener('visibilitychange', syncWhenVisible);
+
+    return () => {
+      disposed = true;
+      controller?.abort();
+      window.clearInterval(interval);
+      window.removeEventListener('focus', syncNow);
+      document.removeEventListener('visibilitychange', syncWhenVisible);
+    };
+  }, [activeTab, hasProcessingJobs]);
 
   function navigate(tab: DashboardTab) {
     setActiveTab(tab);
@@ -441,6 +508,8 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
                 active={active}
                 remainingLabel={remainingLabel}
                 targetMinutes={data.sla.targetMinutes}
+                liveSyncState={liveSyncState}
+                lastSyncedAt={lastSyncedAt}
               />
             )}
             {activeTab === 'clips' && (
@@ -530,11 +599,15 @@ function JobsPanel({
   active,
   remainingLabel,
   targetMinutes,
+  liveSyncState,
+  lastSyncedAt,
 }: {
   jobs: Job[];
   active?: Job;
   remainingLabel: string;
   targetMinutes: number;
+  liveSyncState: LiveSyncState;
+  lastSyncedAt: number;
 }) {
   return (
     <section className="tab-panel jobs-tab">
@@ -544,7 +617,20 @@ function JobsPanel({
           <h2>Every clipping job</h2>
           <p>Follow each source from detection through publishing.</p>
         </div>
-        <span className="tab-count">{jobs.length} total</span>
+        <div className="jobs-live-meta">
+          <span
+            className={`live-sync ${liveSyncState}`}
+            title={`Last synced ${new Date(lastSyncedAt).toLocaleTimeString()}`}
+          >
+            <i />
+            {liveSyncState === 'live'
+              ? 'Live'
+              : liveSyncState === 'offline'
+                ? 'Reconnecting'
+                : 'Connecting'}
+          </span>
+          <span className="tab-count">{jobs.length} total</span>
+        </div>
       </div>
       {active && (
         <ActiveJob
@@ -685,7 +771,10 @@ function SourcesPanel({
   notice: string;
 }) {
   const [librarySourceIds, setLibrarySourceIds] = useState<string[]>(
-    data.sourceChannels[0] ? [data.sourceChannels[0].id] : [],
+    data.sourceChannels.map((source) => source.id),
+  );
+  const knownLibrarySourceIds = useRef(
+    new Set(data.sourceChannels.map((source) => source.id)),
   );
   const [pastVideos, setPastVideos] = useState<LibraryVideo[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -699,12 +788,16 @@ function SourcesPanel({
     );
     setLibrarySourceIds((current) => {
       const retained = current.filter((sourceId) => connectedIds.has(sourceId));
-      return retained.length
-        ? retained
-        : data.sourceChannels[0]
-          ? [data.sourceChannels[0].id]
-          : [];
+      const newlyConnected = data.sourceChannels
+        .map((source) => source.id)
+        .filter((sourceId) => !knownLibrarySourceIds.current.has(sourceId));
+      const next = [...new Set([...retained, ...newlyConnected])];
+      return next.length === current.length &&
+        next.every((sourceId, index) => sourceId === current[index])
+        ? current
+        : next;
     });
+    knownLibrarySourceIds.current = connectedIds;
   }, [data.sourceChannels]);
 
   const videoKey = (video: LibraryVideo) => `${video.sourceId}::${video.id}`;

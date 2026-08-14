@@ -190,6 +190,25 @@ test('dashboard navigation uses focused URL-backed tabs with a full centered pro
   assert.match(styles, /\.mobile-tabs/);
 });
 
+test('jobs survive refresh and stay synchronized with persisted live dashboard data', () => {
+  const page = readFileSync(new URL('../app/dashboard/page.tsx', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('../app/api/dashboard/route.ts', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  assert.match(page, /revalidate = 0/);
+  assert.match(page, /initialTab/);
+  assert.match(page, /searchParams/);
+  assert.match(route, /force-dynamic/);
+  assert.match(route, /private, no-store, max-age=0/);
+  assert.match(repository, /select \* from jobs where tenant_id=\$1 order by detected_at desc limit 50/);
+  assert.match(dashboard, /fetch\('\/api\/dashboard'/);
+  assert.match(dashboard, /cache: 'no-store'/);
+  assert.match(dashboard, /window\.setInterval/);
+  assert.match(dashboard, /visibilitychange/);
+  assert.match(dashboard, /requestController\.signal/);
+  assert.match(dashboard, /Reconnecting/);
+});
+
 test('billing makes upgrade and cancellation equally discoverable', () => {
   const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
   assert.match(dashboard, /upgrade-nav/);
@@ -238,6 +257,8 @@ test('users can selectively backfill past videos from multiple owned sources int
   assert.match(repository, /select \* from source_channels where id=\$1 and tenant_id=\$2/);
   assert.match(dashboard, /Select source channels/);
   assert.match(dashboard, /librarySourceIds/);
+  assert.match(dashboard, /data\.sourceChannels\.map\(\(source\) => source\.id\)/);
+  assert.match(dashboard, /knownLibrarySourceIds/);
   assert.match(dashboard, /JSON\.stringify\(\{ selections \}\)/);
   assert.match(dashboard, /cross-channel batch/);
   assert.match(dashboard, /const videoRounds = useMemo/);
