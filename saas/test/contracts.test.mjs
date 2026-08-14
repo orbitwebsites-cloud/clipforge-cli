@@ -20,12 +20,38 @@ test('database enforces idempotent source-video jobs', () => {
   assert.match(sql, /unique \(tenant_id, source_video_id\)/i);
 });
 
-test('worker keeps the proven clip duration and caption format', () => {
+test('worker keeps creator-controlled duration and caption formats without synthetic voiceover', () => {
   const worker = readFileSync(new URL('../worker/clip-worker.mjs', import.meta.url), 'utf8');
-  assert.match(worker, /min: 15, max: 32/);
+  assert.match(worker, /preferences\.minClipSeconds/);
+  assert.match(worker, /preferences\.maxClipSeconds/);
   assert.match(worker, /captions: true/);
+  assert.match(worker, /captionStyle\(preferences\)/);
   assert.match(worker, /listen\(port, '0\.0\.0\.0'/);
   assert.doesNotMatch(worker, /voiceover|narration/i);
+});
+
+test('creator control center supports review-first publishing and analytics learning', () => {
+  const migration = readFileSync(new URL('../migrations/007_creator_control.sql', import.meta.url), 'utf8');
+  const settings = readFileSync(new URL('../app/api/settings/route.ts', import.meta.url), 'utf8');
+  const publish = readFileSync(new URL('../app/api/clips/publish/route.ts', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../lib/repository.ts', import.meta.url), 'utf8');
+  const worker = readFileSync(new URL('../worker/clip-worker.mjs', import.meta.url), 'utf8');
+  assert.match(migration, /creator_preferences/);
+  assert.match(migration, /rights_confirmed/);
+  assert.match(migration, /privacy_status/);
+  assert.match(settings, /updateCreatorPreferences/);
+  assert.match(publish, /publishYouTubeVideo/);
+  assert.match(repository, /performance_data/);
+  assert.match(worker, /performanceBrief\(job\)/);
+  assert.match(worker, /requestedPrivacy/);
+});
+
+test('new source additions require an explicit rights confirmation', () => {
+  const route = readFileSync(new URL('../app/api/channels/route.ts', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(route, /rightsConfirmed/);
+  assert.match(route, /z\.literal\(true/);
+  assert.match(dashboard, /I own or have permission to repurpose this source/);
 });
 
 test('OAuth requests offline upload access', () => {
@@ -117,7 +143,7 @@ test('Creator jobs receive priority queueing and truthful three-hour positioning
   assert.match(repository, /t\.plan in \('creator','studio'\)/);
   assert.match(repository, /plan === 'free' \? 1440 : 180/);
   assert.match(landing, /Priority queue with 3-hour target/);
-  assert.match(landing, /150 published Shorts monthly/);
+  assert.match(landing, /150 published or review-ready Shorts monthly/);
 });
 
 test('annual Creator checkout saves $68 and domain migration preserves Google OAuth', () => {

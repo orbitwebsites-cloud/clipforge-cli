@@ -98,6 +98,7 @@ export async function loadYouTubeAnalytics(accessToken: string, dashboard: Dashb
       likes: integer(row.likes),
       comments: integer(row.comments),
       subscribersGained: integer(row.subscribersGained),
+      durationSeconds: clip?.durationSeconds || 0,
     };
   });
 

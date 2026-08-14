@@ -28,6 +28,18 @@ export async function refreshGoogleAccessToken(refreshToken: string) {
   return body.access_token as string;
 }
 
+export async function publishYouTubeVideo(accessToken: string, videoId: string) {
+  const response = await fetch('https://www.googleapis.com/youtube/v3/videos?part=status', {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ id: videoId, status: { privacyStatus: 'public', selfDeclaredMadeForKids: false } }),
+    cache: 'no-store',
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message || 'YouTube could not publish this Short');
+  return body;
+}
+
 export async function ownedYouTubeChannel(accessToken: string) {
   const response = await fetch('https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true', { headers: { authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
   const body = await response.json();

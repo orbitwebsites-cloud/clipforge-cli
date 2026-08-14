@@ -121,6 +121,122 @@
   box-shadow: var(--shadow);
 }
 
+.advantage-section {
+  display: grid;
+  grid-template-columns: .85fr 1.15fr;
+  gap: 54px;
+  align-items: center;
+  max-width: 1120px;
+  margin: 110px auto 35px;
+  padding: 0 20px;
+}
+
+.advantage-copy h2 {
+  margin: 15px 0 18px;
+  font: 800 46px/1.06 'Manrope';
+  letter-spacing: -.055em;
+}
+
+.advantage-copy > p:last-of-type {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.advantage-copy .button {
+  margin-top: 15px;
+}
+
+.comparison-card {
+  padding: 13px;
+  border-radius: 24px;
+  background: #171713;
+  color: #fff;
+  box-shadow: 0 30px 80px rgba(23,23,19,.2);
+}
+
+.comparison-head,
+.comparison-row {
+  display: grid;
+  grid-template-columns: 1.7fr .65fr .8fr;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 15px;
+}
+
+.comparison-head {
+  color: #8f9189;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.comparison-head b {
+  color: var(--lime);
+  font-size: 11px;
+}
+
+.comparison-row {
+  border-top: 1px solid #30312b;
+  color: #cbcdc5;
+  font-size: 11px;
+}
+
+.comparison-row b,
+.comparison-row > span:last-child {
+  display: grid;
+  place-items: center;
+}
+
+.comparison-row svg {
+  width: 16px;
+  color: var(--lime);
+}
+
+.comparison-row > span:last-child svg {
+  color: #686a62;
+}
+
+.power-grid {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 13px;
+  max-width: 1120px;
+  margin: 55px auto 110px;
+  padding: 0 20px;
+}
+
+.power-grid article {
+  padding: 25px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+}
+
+.power-grid article > svg {
+  width: 22px;
+  color: #76962e;
+}
+
+.power-grid .overline {
+  margin-top: 21px;
+  font-size: 8px;
+}
+
+.power-grid h3 {
+  margin: 10px 0;
+  font: 800 18px/1.18 'Manrope';
+  letter-spacing: -.035em;
+}
+
+.power-grid article > p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .creator-proof > div:first-child {
   display: grid;
   justify-items: center;
@@ -183,6 +299,37 @@
   }
 
   .creator-benefits {
+    grid-template-columns: 1fr;
+  }
+
+  .advantage-section {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    margin-top: 75px;
+  }
+
+  .advantage-copy h2 {
+    font-size: 36px;
+  }
+
+  .power-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 470px) {
+  .comparison-head,
+  .comparison-row {
+    grid-template-columns: 1.45fr .6fr .75fr;
+    gap: 7px;
+    padding: 12px 8px;
+  }
+
+  .comparison-row {
+    font-size: 9px;
+  }
+
+  .power-grid {
     grid-template-columns: 1fr;
   }
 }

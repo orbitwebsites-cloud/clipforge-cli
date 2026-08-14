@@ -29,6 +29,7 @@ export type SourceChannel = {
   handle: string | null;
   url: string;
   connected: boolean;
+  rightsConfirmed: boolean;
   createdAt: string;
 };
 
@@ -44,7 +45,19 @@ export type Clip = {
   durationSeconds: number;
   youtubeVideoId: string | null;
   youtubeUrl: string | null;
-  status: 'rendered' | 'uploaded' | 'failed';
+  status: 'rendered' | 'review' | 'uploaded' | 'failed';
+  privacyStatus: 'public' | 'private' | null;
+};
+
+export type CreatorPreferences = {
+  publishMode: 'automatic' | 'review';
+  clipsPerVideo: number;
+  minClipSeconds: number;
+  maxClipSeconds: number;
+  captionStyle: 'impact' | 'clean' | 'minimal';
+  brandColor: string;
+  hashtags: string;
+  learningEnabled: boolean;
 };
 
 export type Job = {
@@ -84,6 +97,7 @@ export type DashboardData = {
   channels: Channel[];
   sourceChannels: SourceChannel[];
   jobs: Job[];
+  preferences: CreatorPreferences;
   sla: { targetMinutes: number; deliveredOnTimePercent: number; averageMinutes: number };
 };
 
@@ -126,5 +140,6 @@ export type ChannelAnalytics = {
     likes: number;
     comments: number;
     subscribersGained: number;
+    durationSeconds: number;
   }>;
 };

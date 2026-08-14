@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { Channel, DashboardData, Job, SourceChannel, StoredChannel, StoredSourceChannel, Tenant } from './types';
+import type { Channel, CreatorPreferences, DashboardData, Job, SourceChannel, StoredChannel, StoredSourceChannel, Tenant } from './types';
 
 type DemoStore = { tenants: Tenant[]; channels: StoredChannel[]; sourceChannels: StoredSourceChannel[]; jobs: Job[] };
 const globalStore = globalThis as typeof globalThis & { __clipforgeStore?: DemoStore };
 
 export const DEMO_TENANT_ID = 'tenant_demo';
+
+export const defaultCreatorPreferences: CreatorPreferences = { publishMode: 'automatic', clipsPerVideo: 3, minClipSeconds: 15, maxClipSeconds: 32, captionStyle: 'impact', brandColor: '#C8FF38', hashtags: '#Shorts #Minecraft', learningEnabled: true };
 
 export function demoStore(): DemoStore {
   if (!globalStore.__clipforgeStore) {
@@ -24,7 +26,7 @@ export function demoDashboard(tenantId = DEMO_TENANT_ID): DashboardData {
   if (!tenant) throw new Error('Tenant not found');
   const channels: Channel[] = store.channels.filter((item) => item.tenantId === tenant.id).map(({ webhookSecret: _webhookSecret, refreshTokenEncrypted: _refreshToken, ...channel }) => channel);
   const sourceChannels: SourceChannel[] = store.sourceChannels.filter((item) => item.tenantId === tenant.id).map(({ webhookSecret: _secret, destinationChannelId: _destination, ...channel }) => channel);
-  return { tenant, channels, sourceChannels, jobs: store.jobs.filter((item) => item.tenantId === tenant.id).sort((a, b) => b.detectedAt.localeCompare(a.detectedAt)), sla: { targetMinutes: 180, deliveredOnTimePercent: 100, averageMinutes: 0 } };
+  return { tenant, channels, sourceChannels, preferences: defaultCreatorPreferences, jobs: store.jobs.filter((item) => item.tenantId === tenant.id).sort((a, b) => b.detectedAt.localeCompare(a.detectedAt)), sla: { targetMinutes: 180, deliveredOnTimePercent: 100, averageMinutes: 0 } };
 }
 
 export function demoAddChannel(tenantId: string, data: Omit<StoredChannel, 'id' | 'tenantId' | 'createdAt'>) {

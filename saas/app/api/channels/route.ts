@@ -4,19 +4,19 @@ import { tenantIdFromSession } from '@/lib/session';
 import { resolveYouTubeChannel, subscribeWebSub } from '@/lib/youtube';
 import { isTwitchInput, resolveTwitchChannel, subscribeTwitchEventSub } from '@/lib/twitch';
 
-const inputSchema = z.object({ url: z.string().trim().min(1, 'Enter a YouTube channel link or @handle.').max(500) });
+const inputSchema = z.object({ url: z.string().trim().min(1, 'Enter a YouTube channel link or @handle.').max(500), rightsConfirmed: z.literal(true, 'Confirm that you own or have permission to repurpose this source.') });
 
 export async function POST(request: Request) {
   try {
     const tenantId = await tenantIdFromSession();
-    const { url } = inputSchema.parse(await request.json());
+    const { url, rightsConfirmed } = inputSchema.parse(await request.json());
     const dashboard = await getDashboard(tenantId);
     const destination = dashboard.channels[0];
     if (!destination) return Response.json({ error: 'Connect YouTube first.' }, { status: 409 });
     const resolved = isTwitchInput(url) ? await resolveTwitchChannel(url) : await resolveYouTubeChannel(url);
     const alreadyConnected = dashboard.sourceChannels.find((source) => source.platform === resolved.platform && source.platformUserId === resolved.platformUserId);
     if (alreadyConnected) return Response.json({ ok: true, alreadyConnected: true, message: `${alreadyConnected.title} is already connected. Paste a different channel to add another source.`, dashboard });
-    const source = await addSourceChannel(tenantId, destination.id, resolved);
+    const source = await addSourceChannel(tenantId, destination.id, { ...resolved, rightsConfirmed });
     if (source.platform === 'twitch') await subscribeTwitchEventSub(source);
     else await subscribeWebSub(source);
     const updated = await getDashboard(tenantId);

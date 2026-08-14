@@ -10,6 +10,7 @@ create table if not exists tenants (
   monthly_clip_limit integer not null default 10,
   source_channel_limit integer not null default 1,
   complimentary_creator boolean not null default false,
+  creator_preferences jsonb not null default '{"publishMode":"automatic","clipsPerVideo":3,"minClipSeconds":15,"maxClipSeconds":32,"captionStyle":"impact","brandColor":"#C8FF38","hashtags":"#Shorts #Minecraft","learningEnabled":true}'::jsonb,
   usage_month date not null default date_trunc('month',now())::date,
   created_at timestamptz not null default now()
 );
@@ -42,6 +43,7 @@ create table if not exists source_channels (
   handle text,
   url text not null,
   connected boolean not null default true,
+  rights_confirmed boolean not null default false,
   webhook_secret text not null,
   last_polled_at timestamptz,
   websub_expires_at timestamptz,
@@ -77,6 +79,7 @@ create table if not exists clips (
   youtube_video_id text,
   youtube_url text,
   status text not null,
+  privacy_status text check (privacy_status is null or privacy_status in ('public','private')),
   created_at timestamptz not null default now(),
   unique(job_id, youtube_video_id)
 );

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { databaseEnabled, query } from './db';
-import { demoAddChannel, demoAddSourceChannel, demoDashboard, demoEnqueue, demoStore } from './demo-store';
-import type { Channel, ChannelAnalytics, DashboardData, Job, JobStatus, StoredChannel, StoredSourceChannel } from './types';
+import { defaultCreatorPreferences, demoAddChannel, demoAddSourceChannel, demoDashboard, demoEnqueue, demoStore } from './demo-store';
+import type { Channel, ChannelAnalytics, CreatorPreferences, DashboardData, Job, JobStatus, StoredChannel, StoredSourceChannel } from './types';
 
 export async function getDashboard(tenantId: string): Promise<DashboardData> {
   if (!databaseEnabled()) return demoDashboard(tenantId);
@@ -25,6 +25,7 @@ export async function getDashboard(tenantId: string): Promise<DashboardData> {
     tenant: { id: tenant.id, name: tenant.name, email: tenant.email, plan: tenant.plan, subscriptionStatus: tenant.subscription_status, stripeCustomerId: tenant.stripe_customer_id, clipsThisMonth: Number(tenant.clips_this_month), monthlyClipLimit: Number(tenant.monthly_clip_limit), sourceChannelLimit: Number(tenant.source_channel_limit), complimentaryCreator: Boolean(tenant.complimentary_creator) },
     channels: channelResult.rows.map(mapChannel).map(publicChannel),
     sourceChannels: sourceResult.rows.map(mapSourceChannel).map(publicSourceChannel), jobs,
+    preferences: { ...defaultCreatorPreferences, ...(tenant.creator_preferences || {}) },
     sla: { targetMinutes, deliveredOnTimePercent: minutes.length ? Math.round(100 * minutes.filter((m) => m <= targetMinutes).length / minutes.length) : 100, averageMinutes: minutes.length ? Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length) : 0 },
   };
 }
@@ -63,9 +64,9 @@ async function resetMonthlyUsage(tenantId?: string) {
 
 const mapChannel = (row: any): StoredChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, title: row.title, handle: row.handle, sourceUrl: row.source_url, connected: row.connected, webhookSecret: row.webhook_secret, refreshTokenEncrypted: row.refresh_token_encrypted, createdAt: row.created_at.toISOString?.() || row.created_at });
 const publicChannel = ({ webhookSecret: _webhookSecret, refreshTokenEncrypted: _refreshToken, ...channel }: StoredChannel): Channel => channel;
-const mapSourceChannel = (row: any): StoredSourceChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, platform: row.platform || 'youtube', platformUserId: row.platform_user_id || row.youtube_channel_id, platformLogin: row.platform_login || null, title: row.title, handle: row.handle, url: row.url, connected: row.connected, webhookSecret: row.webhook_secret, destinationChannelId: row.destination_channel_id, createdAt: row.created_at.toISOString?.() || row.created_at });
+const mapSourceChannel = (row: any): StoredSourceChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, platform: row.platform || 'youtube', platformUserId: row.platform_user_id || row.youtube_channel_id, platformLogin: row.platform_login || null, title: row.title, handle: row.handle, url: row.url, connected: row.connected, rightsConfirmed: Boolean(row.rights_confirmed), webhookSecret: row.webhook_secret, destinationChannelId: row.destination_channel_id, createdAt: row.created_at.toISOString?.() || row.created_at });
 const publicSourceChannel = ({ webhookSecret: _webhookSecret, destinationChannelId: _destination, ...channel }: StoredSourceChannel) => channel;
-const mapClip = (row: any) => ({ id: row.id, jobId: row.job_id, title: row.title, durationSeconds: Number(row.duration_seconds), youtubeVideoId: row.youtube_video_id, youtubeUrl: row.youtube_url, status: row.status });
+const mapClip = (row: any) => ({ id: row.id, jobId: row.job_id, title: row.title, durationSeconds: Number(row.duration_seconds), youtubeVideoId: row.youtube_video_id, youtubeUrl: row.youtube_url, status: row.status, privacyStatus: row.privacy_status || (row.status === 'review' ? 'private' : row.youtube_video_id ? 'public' : null) });
 const mapJob = (row: any, clips: any[] = []): Job => ({ id: row.id, tenantId: row.tenant_id, channelId: row.channel_id, sourceVideoId: row.source_video_id, sourceTitle: row.source_title, sourceUrl: row.source_url, status: row.status, progress: Number(row.progress), detectedAt: row.detected_at.toISOString?.() || row.detected_at, deadlineAt: row.deadline_at.toISOString?.() || row.deadline_at, startedAt: row.started_at?.toISOString?.() || row.started_at, completedAt: row.completed_at?.toISOString?.() || row.completed_at, error: row.error, leaseOwner: row.lease_owner, leaseExpiresAt: row.lease_expires_at?.toISOString?.() || row.lease_expires_at, clips });
 
 export async function saveConnectedChannel(tenantId: string, input: { youtubeChannelId: string; title: string; handle: string | null; sourceUrl: string; refreshTokenEncrypted: string }) {
@@ -89,7 +90,7 @@ export async function saveConnectedChannel(tenantId: string, input: { youtubeCha
   return destination;
 }
 
-export async function addSourceChannel(tenantId: string, destinationChannelId: string, input: { youtubeChannelId: string; platform: 'youtube' | 'twitch'; platformUserId: string; platformLogin: string | null; title: string; handle: string | null; url: string }) {
+export async function addSourceChannel(tenantId: string, destinationChannelId: string, input: { youtubeChannelId: string; platform: 'youtube' | 'twitch'; platformUserId: string; platformLogin: string | null; title: string; handle: string | null; url: string; rightsConfirmed: boolean }) {
   const webhookSecret = randomBytes(24).toString('base64url');
   if (!databaseEnabled()) {
     const existing = demoStore().sourceChannels.find((source) => source.tenantId === tenantId && source.youtubeChannelId === input.youtubeChannelId);
@@ -106,10 +107,10 @@ export async function addSourceChannel(tenantId: string, destinationChannelId: s
   const limits = allowance.rows[0];
   if (!limits) throw new Error('Account not found');
   if (Number(limits.source_count) >= Number(limits.source_channel_limit)) throw new Error(`${limits.plan === 'creator' ? 'Creator' : 'Free'} plan allows ${limits.source_channel_limit} source channel${Number(limits.source_channel_limit) === 1 ? '' : 's'}.`);
-  const result = await query<any>(`insert into source_channels (id,tenant_id,destination_channel_id,youtube_channel_id,platform,platform_user_id,platform_login,title,handle,url,connected,webhook_secret)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11)
-    on conflict (tenant_id,youtube_channel_id) do update set platform=excluded.platform,platform_user_id=excluded.platform_user_id,platform_login=excluded.platform_login,title=excluded.title,handle=excluded.handle,url=excluded.url,connected=true,destination_channel_id=excluded.destination_channel_id
-    returning *`, [randomUUID(), tenantId, destinationChannelId, input.youtubeChannelId, input.platform, input.platformUserId, input.platformLogin, input.title, input.handle, input.url, webhookSecret]);
+  const result = await query<any>(`insert into source_channels (id,tenant_id,destination_channel_id,youtube_channel_id,platform,platform_user_id,platform_login,title,handle,url,connected,webhook_secret,rights_confirmed)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11,$12)
+    on conflict (tenant_id,youtube_channel_id) do update set platform=excluded.platform,platform_user_id=excluded.platform_user_id,platform_login=excluded.platform_login,title=excluded.title,handle=excluded.handle,url=excluded.url,connected=true,destination_channel_id=excluded.destination_channel_id,rights_confirmed=excluded.rights_confirmed
+    returning *`, [randomUUID(), tenantId, destinationChannelId, input.youtubeChannelId, input.platform, input.platformUserId, input.platformLogin, input.title, input.handle, input.url, webhookSecret, input.rightsConfirmed]);
   return mapSourceChannel(result.rows[0]);
 }
 
@@ -121,6 +122,13 @@ export async function removeSourceChannel(tenantId: string, sourceId: string) {
   }
   const result = await query('delete from source_channels where id=$1 and tenant_id=$2 returning id', [sourceId, tenantId]);
   if (!result.rowCount) throw new Error('Source channel not found');
+}
+
+export async function updateCreatorPreferences(tenantId: string, preferences: CreatorPreferences) {
+  if (!databaseEnabled()) return preferences;
+  const result = await query<{ creator_preferences: CreatorPreferences }>('update tenants set creator_preferences=$2 where id=$1 returning creator_preferences', [tenantId, preferences]);
+  if (!result.rows[0]) throw new Error('Account not found');
+  return result.rows[0].creator_preferences;
 }
 
 export async function webhookSourceChannel(channelId: string, secret: string) {
@@ -157,16 +165,18 @@ export async function leaseNextJob(workerId: string) {
     if (!job) return null;
     const tenant = demoStore().tenants.find((item) => item.id === job.tenantId)!;
     Object.assign(job, { status: 'downloading', progress: 5, startedAt: job.startedAt || new Date().toISOString(), leaseOwner: workerId, leaseExpiresAt: new Date(Date.now() + 10 * 60000).toISOString() });
-    return { ...job, maxUploads: tenant.monthlyClipLimit - tenant.clipsThisMonth };
+    return { ...job, maxUploads: tenant.monthlyClipLimit - tenant.clipsThisMonth, preferences: defaultCreatorPreferences, performanceData: null };
   }
   await resetMonthlyUsage();
   const result = await query<any>(`with candidate as (
-      select j.id,t.monthly_clip_limit-t.clips_this_month as max_uploads from jobs j join tenants t on t.id=j.tenant_id
+      select j.id,t.monthly_clip_limit-t.clips_this_month as max_uploads,t.creator_preferences,
+        (select a.data from channel_analytics_snapshots a where a.channel_id=j.channel_id order by a.synced_at desc limit 1) as performance_data
+      from jobs j join tenants t on t.id=j.tenant_id
       where t.clips_this_month<t.monthly_clip_limit and (j.status='queued' or (j.status not in ('complete','failed') and j.lease_expires_at < now()))
       order by case when t.plan in ('creator','studio') then 0 else 1 end,j.deadline_at asc for update of j skip locked limit 1
     ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '10 minutes'
-    from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads`, [workerId]);
-  return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads) } : null;
+    from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads,candidate.creator_preferences,candidate.performance_data`, [workerId]);
+  return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads), preferences: { ...defaultCreatorPreferences, ...(result.rows[0].creator_preferences || {}) }, performanceData: result.rows[0].performance_data || null } : null;
 }
 
 export async function updateJob(jobId: string, workerId: string, status: JobStatus, progress: number, error: string | null = null) {
@@ -213,24 +223,37 @@ export async function saveChannelAnalytics(channelId: string, rangeDays: number,
   );
 }
 
-export async function replaceJobClips(jobId: string, clips: Array<{ title: string; durationSeconds: number; youtubeVideoId: string; youtubeUrl: string }>) {
+export async function replaceJobClips(jobId: string, clips: Array<{ title: string; durationSeconds: number; youtubeVideoId: string; youtubeUrl: string; privacyStatus: 'public' | 'private' }>) {
   if (!databaseEnabled()) {
     const job = demoStore().jobs.find((j) => j.id === jobId);
     if (job) {
       const tenant = demoStore().tenants.find((item) => item.id === job.tenantId);
       const accepted = clips.slice(0, Math.max(0, (tenant?.monthlyClipLimit || 0) - (tenant?.clipsThisMonth || 0)));
-      job.clips = accepted.map((clip) => ({ ...clip, id: randomUUID(), jobId, status: 'uploaded' }));
+      job.clips = accepted.map((clip) => ({ ...clip, id: randomUUID(), jobId, status: clip.privacyStatus === 'private' ? 'review' : 'uploaded' }));
       if (tenant) tenant.clipsThisMonth += accepted.length;
     }
     return;
   }
   let inserted = 0;
   for (const clip of clips) {
-    const result = await query(`insert into clips (id,job_id,title,duration_seconds,youtube_video_id,youtube_url,status) values ($1,$2,$3,$4,$5,$6,'uploaded') on conflict (job_id,youtube_video_id) do nothing`, [randomUUID(), jobId, clip.title, clip.durationSeconds, clip.youtubeVideoId, clip.youtubeUrl]);
+    const status = clip.privacyStatus === 'private' ? 'review' : 'uploaded';
+    const result = await query(`insert into clips (id,job_id,title,duration_seconds,youtube_video_id,youtube_url,status,privacy_status) values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (job_id,youtube_video_id) do nothing`, [randomUUID(), jobId, clip.title, clip.durationSeconds, clip.youtubeVideoId, clip.youtubeUrl, status, clip.privacyStatus]);
     inserted += result.rowCount || 0;
   }
   if (inserted) await query(`update tenants t set clips_this_month=least(t.monthly_clip_limit,t.clips_this_month+$2)
     from jobs j where j.id=$1 and t.id=j.tenant_id`, [jobId, inserted]);
+}
+
+export async function reviewClipForTenant(tenantId: string, clipId: string) {
+  if (!databaseEnabled()) return null;
+  const result = await query<any>(`select c.*,j.channel_id from clips c join jobs j on j.id=c.job_id where c.id=$1 and j.tenant_id=$2 and c.status='review'`, [clipId, tenantId]);
+  return result.rows[0] || null;
+}
+
+export async function markClipPublished(tenantId: string, clipId: string) {
+  if (!databaseEnabled()) return;
+  const result = await query(`update clips c set status='uploaded',privacy_status='public' from jobs j where c.id=$1 and c.job_id=j.id and j.tenant_id=$2 returning c.id`, [clipId, tenantId]);
+  if (!result.rowCount) throw new Error('Review clip not found');
 }
 
 export async function monitoredSourceChannels() {

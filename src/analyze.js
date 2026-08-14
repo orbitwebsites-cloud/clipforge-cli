@@ -131,10 +131,11 @@ function windows(text) {
   return out;
 }
 
-async function askCerebras(transcript, count, min, max, log = () => {}, critique = null) {
-  const preamble = critique
-    ? `Evaluator feedback on the previous attempt:\n${critique}\n\nUse this to find DIFFERENT and BETTER moments.\n\n`
-    : '';
+async function askCerebras(transcript, count, min, max, log = () => {}, critique = null, performanceBrief = '') {
+  const preamble = [
+    performanceBrief ? `This channel's recent performance signals:\n${performanceBrief}\nUse these signals as evidence, but never copy a title or force a weak match.` : '',
+    critique ? `Evaluator feedback on the previous attempt:\n${critique}\nUse this to find DIFFERENT and BETTER moments.` : '',
+  ].filter(Boolean).join('\n\n');
   const res = await chatWithFailover(
     {
       temperature: 0.3,
@@ -143,7 +144,7 @@ async function askCerebras(transcript, count, min, max, log = () => {}, critique
         { role: 'system', content: SYSTEM.replace('{MIN}', min).replace('{MAX}', max) },
         {
           role: 'user',
-          content: `${preamble}Find up to ${count} clips in this transcript.\n\n<transcript>\n${transcript}\n</transcript>`,
+          content: `${preamble ? `${preamble}\n\n` : ''}Find up to ${count} clips in this transcript.\n\n<transcript>\n${transcript}\n</transcript>`,
         },
       ],
     },
@@ -310,7 +311,7 @@ const pace = (i, total) =>
 export async function findHighlights(
   { segments },
   duration,
-  { count = 5, min = 15, max = 75, log = () => {}, critique = null } = {}
+  { count = 5, min = 15, max = 75, log = () => {}, critique = null, performanceBrief = '' } = {}
 ) {
   const model = await resolveCerebrasModel();
   const transcript = buildTranscript(segments);
@@ -326,7 +327,7 @@ export async function findHighlights(
     // ranking with nothing to choose between.
     const perWindow = chunks.length > 1 ? Math.max(6, Math.ceil((count * 3) / chunks.length) + 2) : count + 3;
     try {
-      candidates.push(...(await askCerebras(chunk, perWindow, min, max, log, i === 0 ? critique : null)));
+      candidates.push(...(await askCerebras(chunk, perWindow, min, max, log, i === 0 ? critique : null, i === 0 ? performanceBrief : '')));
     } catch (err) {
       log(`  ! window ${i + 1} failed: ${err.message.split('\n')[0]}`);
     }

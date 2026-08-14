@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
-import { Activity, ArrowRight, BarChart3, Captions, Check, Clock3, ExternalLink, Eye, Gauge, LayoutDashboard, Link2, LoaderCircle, MessageCircle, Play, Plus, Radio, RefreshCw, Settings, Sparkles, ThumbsUp, Timer, Trash2, TrendingUp, Tv, UploadCloud, Users } from 'lucide-react';
-import type { ChannelAnalytics, DashboardData, JobStatus } from '@/lib/types';
+import { Activity, ArrowRight, BarChart3, Captions, Check, Clock3, ExternalLink, Eye, Gauge, LayoutDashboard, Link2, LoaderCircle, MessageCircle, Palette, Play, Plus, Radio, RefreshCw, Rocket, Settings, ShieldCheck, SlidersHorizontal, Sparkles, ThumbsUp, Timer, Trash2, TrendingUp, Tv, UploadCloud, Users, WandSparkles } from 'lucide-react';
+import type { ChannelAnalytics, CreatorPreferences, DashboardData, JobStatus } from '@/lib/types';
 
 const statusLabels: Record<JobStatus, string> = { queued: 'Queued', downloading: 'Downloading', transcribing: 'Transcribing', selecting: 'Selecting moments', rendering: 'Rendering clips', uploading: 'Publishing', complete: 'Published', failed: 'Needs attention' };
 const stageOrder: JobStatus[] = ['downloading', 'transcribing', 'selecting', 'rendering', 'uploading', 'complete'];
@@ -17,20 +17,21 @@ function relative(value: string) {
 export default function Dashboard({ initial }: { initial: DashboardData }) {
   const [data, setData] = useState(initial);
   const [sourceUrl, setSourceUrl] = useState('');
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const destination = data.channels[0];
   const active = data.jobs.find((job) => !['complete', 'failed'].includes(job.status));
-  const completedClips = data.jobs.flatMap((job) => job.clips).filter((clip) => clip.status === 'uploaded');
+  const completedClips = data.jobs.flatMap((job) => job.clips).filter((clip) => ['uploaded', 'review'].includes(clip.status));
   const deadlineRemaining = active ? Math.max(0, new Date(active.deadlineAt).getTime() - Date.now()) : 0;
   const remainingLabel = useMemo(() => `${String(Math.floor(deadlineRemaining / 3600000)).padStart(2, '0')}:${String(Math.floor(deadlineRemaining % 3600000 / 60000)).padStart(2, '0')}`, [deadlineRemaining]);
 
   async function addSource(event: React.FormEvent) {
     event.preventDefault(); setSaving(true); setNotice('');
-    const response = await fetch('/api/channels', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: sourceUrl }) });
+    const response = await fetch('/api/channels', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: sourceUrl, rightsConfirmed }) });
     const body = await response.json(); setSaving(false);
     setNotice(response.ok ? body.message || 'Source connected. New uploads are now monitored.' : body.error || 'Could not connect source.');
-    if (body.dashboard) { setData(body.dashboard); setSourceUrl(''); }
+    if (body.dashboard) { setData(body.dashboard); setSourceUrl(''); setRightsConfirmed(false); }
   }
 
   async function removeSource(id: string) {
@@ -48,6 +49,15 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
     if (body.url) window.location.href = body.url;
   }
 
+  async function publishClip(clipId: string) {
+    setSaving(true); setNotice('');
+    const response = await fetch('/api/clips/publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clipId }) });
+    const body = await response.json(); setSaving(false);
+    if (!response.ok) return setNotice(body.error || 'Short could not be published.');
+    setData((current) => ({ ...current, jobs: current.jobs.map((job) => ({ ...job, clips: job.clips.map((clip) => clip.id === clipId ? { ...clip, status: 'uploaded', privacyStatus: 'public' } : clip) })) }));
+    setNotice('Short published to YouTube.');
+  }
+
   return <main className="app-shell">
     <aside className="sidebar">
       <Link className="brand" href="/"><span className="brand-mark"><Play size={15} fill="currentColor" /></span>ClipForge <em>Cloud</em></Link>
@@ -59,7 +69,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
       {!destination ? <EmptyOnboarding name={data.tenant.name} /> : <>
         <header className="app-header"><div><p className="overline">Creator workspace</p><h1>{destination.title}</h1><p>Shorts publish here. Your {data.tenant.plan} plan supports {data.tenant.sourceChannelLimit} source channel{data.tenant.sourceChannelLimit === 1 ? '' : 's'}.</p></div><div className="header-actions"><span className="live-chip"><i /> Destination connected</span><button className="button button-dark" onClick={() => document.querySelector('#channels')?.scrollIntoView()}><Plus size={17} /> Add source</button></div></header>
 
-        {!data.sourceChannels.length ? <SourceOnboarding destination={destination.title} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} addSource={addSource} saving={saving} notice={notice} /> : <>
+        {!data.sourceChannels.length ? <SourceOnboarding destination={destination.title} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} rightsConfirmed={rightsConfirmed} setRightsConfirmed={setRightsConfirmed} addSource={addSource} saving={saving} notice={notice} /> : <>
           <div className="metrics-grid">
             <article><div><span className="metric-icon green"><Gauge /></span><small>SLA delivery</small></div><b>{data.sla.deliveredOnTimePercent}%</b><p>within 3 hours</p></article>
             <article><div><span className="metric-icon purple"><Captions /></span><small>Clips this month</small></div><b>{data.tenant.clipsThisMonth}</b><p>of {data.tenant.monthlyClipLimit} included</p></article>
@@ -70,21 +80,52 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
           {active && <article className="active-job" id="jobs"><div className="active-top"><div><span className="status-badge"><LoaderCircle className="spin" /> Processing now</span><h2>{active.sourceTitle}</h2><p>Detected {relative(active.detectedAt)} · {statusLabels[active.status]}</p></div><div className="deadline"><small>Time remaining</small><b>{remainingLabel}</b><span>{data.sla.targetMinutes === 180 ? 'Creator priority · 3-hour target' : 'Standard queue'}</span></div></div><div className="progress-track"><i style={{ width: `${active.progress}%` }} /></div><div className="stages">{stageOrder.map((stage, index) => { const current = stageOrder.indexOf(active.status); const done = current > index || active.status === 'complete'; return <div className={done ? 'done' : current === index ? 'current' : ''} key={stage}><span>{done ? <Check /> : index + 1}</span><b>{statusLabels[stage]}</b></div>; })}</div></article>}
 
           <div className="dashboard-columns">
-            <section className="panel" id="clips"><div className="panel-header"><div><p className="overline">Recent output</p><h2>Published clips</h2></div></div><div className="clip-list">{completedClips.length ? completedClips.map((clip) => <a className="clip-row" href={clip.youtubeUrl || '#'} target="_blank" key={clip.id}><div className="clip-thumb"><Play fill="currentColor" /></div><div><b>{clip.title}</b><p>{clip.durationSeconds}s · YouTube Short</p></div><span className="published-dot">Live</span><ExternalLink /></a>) : <div className="empty-state"><UploadCloud /><b>Your first clips will appear here</b><p>We are watching your source channels for new uploads.</p></div>}</div></section>
+            <section className="panel" id="clips"><div className="panel-header"><div><p className="overline">Recent output</p><h2>Published clips</h2></div></div><div className="clip-list">{completedClips.length ? completedClips.map((clip) => <div className="clip-row" key={clip.id}><div className="clip-thumb"><Play fill="currentColor" /></div><a href={clip.youtubeUrl || '#'} target="_blank"><b>{clip.title}</b><p>{clip.durationSeconds}s · {clip.status === 'review' ? 'Private review' : 'YouTube Short'}</p></a>{clip.status === 'review' ? <button className="publish-now" onClick={() => publishClip(clip.id)} disabled={saving}><Rocket /> Publish</button> : <span className="published-dot">Live</span>}<a href={clip.youtubeUrl || '#'} target="_blank" aria-label={`Open ${clip.title}`}><ExternalLink /></a></div>) : <div className="empty-state"><UploadCloud /><b>Your first clips will appear here</b><p>We are watching your source channels for new uploads.</p></div>}</div></section>
 
             <section className="panel setup-panel" id="channels"><div className="panel-header"><div><p className="overline">Input channels</p><h2>Clip sources</h2></div><span className="step-count">{data.sourceChannels.length} active</span></div>
               <div className="source-list">{data.sourceChannels.map((source) => <div className="source-item" key={source.id}><span><Radio /></span><div><b>{source.title}</b><p>{source.platform === 'twitch' ? 'Twitch' : 'YouTube'} · {source.handle || source.platformLogin || source.platformUserId}</p></div><button aria-label={`Remove ${source.title}`} onClick={() => removeSource(source.id)} disabled={saving}><Trash2 /></button></div>)}</div>
-              <form className="channel-form" onSubmit={addSource}><label htmlFor="channel"><Link2 /> Add a YouTube or Twitch source</label><div><input id="channel" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/@creator or twitch.tv/creator" required /><button disabled={saving || data.sourceChannels.length >= data.tenant.sourceChannelLimit}>{saving ? <LoaderCircle className="spin" /> : <Plus />}</button></div><small>Channel, stream, and VOD links work. Replays are clipped automatically after streams end.</small></form>{notice && <p className="form-notice">{notice}</p>}
+              <form className="channel-form" onSubmit={addSource}><label htmlFor="channel"><Link2 /> Add a YouTube or Twitch source</label><div><input id="channel" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/@creator or twitch.tv/creator" required /><button disabled={saving || !rightsConfirmed || data.sourceChannels.length >= data.tenant.sourceChannelLimit}>{saving ? <LoaderCircle className="spin" /> : <Plus />}</button></div><label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><ShieldCheck /> I own or have permission to repurpose this source.</label><small>Channel, stream, and VOD links work. Replays are clipped automatically after streams end.</small></form>{notice && <p className="form-notice">{notice}</p>}
             </section>
           </div>
         </>}
 
         <AnalyticsPanel destinationId={destination.id} />
 
+        <SettingsPanel initial={data.preferences} onSaved={(dashboard) => setData(dashboard)} />
+
         <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && <><button className="button button-ghost" onClick={() => startCheckout('monthly')} disabled={saving}>$49 monthly</button><button className="button button-primary" onClick={() => startCheckout('annual')} disabled={saving}>$520 yearly · Save $68 <ArrowRight /></button></>}</div></section>
       </>}
     </section>
   </main>;
+}
+
+function SettingsPanel({ initial, onSaved }: { initial: CreatorPreferences; onSaved: (dashboard: DashboardData) => void }) {
+  const [preferences, setPreferences] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
+  const update = <K extends keyof CreatorPreferences>(key: K, value: CreatorPreferences[K]) => setPreferences((current) => ({ ...current, [key]: value }));
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault(); setSaving(true); setNotice('');
+    const response = await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(preferences) });
+    const body = await response.json(); setSaving(false);
+    setNotice(response.ok ? 'Autopilot settings saved. New jobs will use them.' : body.error || 'Settings could not be saved.');
+    if (body.dashboard) onSaved(body.dashboard);
+  }
+
+  return <section className="control-center" id="settings">
+    <div className="analytics-heading"><div><p className="overline">Control without babysitting</p><h2>Autopilot control center</h2><p>Choose how ClipForge selects, styles, and publishes every new batch.</p></div><span className="learning-chip"><WandSparkles /> Performance learning {preferences.learningEnabled ? 'on' : 'off'}</span></div>
+    <form onSubmit={save}>
+      <div className="control-grid">
+        <fieldset><legend><Rocket /> Publishing mode</legend><div className="choice-cards"><button type="button" className={preferences.publishMode === 'automatic' ? 'selected' : ''} onClick={() => update('publishMode', 'automatic')}><b>Automatic</b><span>Best clips go public without another click.</span></button><button type="button" className={preferences.publishMode === 'review' ? 'selected' : ''} onClick={() => update('publishMode', 'review')}><b>Review first</b><span>Upload privately, then publish from ClipForge.</span></button></div></fieldset>
+        <fieldset><legend><SlidersHorizontal /> Clip recipe</legend><div className="field-row"><label>Clips per video<select value={preferences.clipsPerVideo} onChange={(event) => update('clipsPerVideo', Number(event.target.value))}>{[1,2,3,4,5].map((value) => <option key={value}>{value}</option>)}</select></label><label>Minimum<select value={preferences.minClipSeconds} onChange={(event) => update('minClipSeconds', Number(event.target.value))}>{[10,15,20,25,30].filter((value) => value < preferences.maxClipSeconds).map((value) => <option key={value} value={value}>{value}s</option>)}</select></label><label>Maximum<select value={preferences.maxClipSeconds} onChange={(event) => update('maxClipSeconds', Number(event.target.value))}>{[20,25,32,40,50,60].filter((value) => value > preferences.minClipSeconds).map((value) => <option key={value} value={value}>{value}s</option>)}</select></label></div></fieldset>
+        <fieldset><legend><Captions /> Caption preset</legend><div className="preset-row">{(['impact','clean','minimal'] as const).map((style) => <button type="button" key={style} className={`caption-preset ${style} ${preferences.captionStyle === style ? 'selected' : ''}`} onClick={() => update('captionStyle', style)}><span>MAKE IT COUNT</span><b>{style}</b></button>)}</div></fieldset>
+        <fieldset><legend><Palette /> Brand and metadata</legend><div className="brand-fields"><label>Highlight color<input type="color" value={preferences.brandColor} onChange={(event) => update('brandColor', event.target.value.toUpperCase())} /></label><label>Default hashtags<input type="text" value={preferences.hashtags} onChange={(event) => update('hashtags', event.target.value)} placeholder="#Shorts #Minecraft" /></label></div></fieldset>
+      </div>
+      <label className="learning-toggle"><input type="checkbox" checked={preferences.learningEnabled} onChange={(event) => update('learningEnabled', event.target.checked)} /><span><TrendingUp /><b>Learn from winning Shorts</b><small>Feed recent views, average watch time, and engagement back into future moment selection.</small></span></label>
+      <div className="control-actions">{notice && <p className="form-notice">{notice}</p>}<button className="button button-dark" disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <><Check /> Save autopilot</>}</button></div>
+    </form>
+  </section>;
 }
 
 function compactNumber(value: number) {
@@ -172,6 +213,6 @@ function EmptyOnboarding({ name }: { name: string }) {
   return <section className="onboarding-empty"><div className="onboarding-orbit"><span><UploadCloud /></span></div><p className="overline">Welcome, {name.split(' ')[0]}</p><h1>Let’s publish your first Shorts.</h1><p>This is a brand-new workspace with nothing linked. Sign in with Google below and choose the YouTube channel where ClipForge should upload your finished clips.</p><a className="button button-primary button-large" href="/api/auth/youtube/start">Connect YouTube with Google <ArrowRight /></a><small><Check /> A channel is linked only after Google confirms you own it</small></section>;
 }
 
-function SourceOnboarding({ destination, sourceUrl, setSourceUrl, addSource, saving, notice }: { destination: string; sourceUrl: string; setSourceUrl: (value: string) => void; addSource: (event: React.FormEvent) => void; saving: boolean; notice: string }) {
-  return <section className="onboarding-empty source-onboarding" id="channels"><div className="onboarding-orbit connected"><span><Check /></span></div><p className="overline">Destination connected</p><h1>Now choose where clips come from.</h1><p>Finished Shorts will post to <b>{destination}</b>. Add YouTube channels or Twitch creators for ClipForge to monitor.</p><form className="onboarding-form" onSubmit={addSource}><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/@creator or twitch.tv/creator" required /><button className="button button-primary" disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <>Connect source <ArrowRight /></>}</button></form>{notice && <p className="form-notice">{notice}</p>}<small>YouTube uploads and stream replays plus Twitch VODs are supported.</small></section>;
+function SourceOnboarding({ destination, sourceUrl, setSourceUrl, rightsConfirmed, setRightsConfirmed, addSource, saving, notice }: { destination: string; sourceUrl: string; setSourceUrl: (value: string) => void; rightsConfirmed: boolean; setRightsConfirmed: (value: boolean) => void; addSource: (event: React.FormEvent) => void; saving: boolean; notice: string }) {
+  return <section className="onboarding-empty source-onboarding" id="channels"><div className="onboarding-orbit connected"><span><Check /></span></div><p className="overline">Destination connected</p><h1>Now choose where clips come from.</h1><p>Finished Shorts will post to <b>{destination}</b>. Add YouTube channels or Twitch creators for ClipForge to monitor.</p><form className="onboarding-form source-first-form" onSubmit={addSource}><div><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/@creator or twitch.tv/creator" required /><button className="button button-primary" disabled={saving || !rightsConfirmed}>{saving ? <LoaderCircle className="spin" /> : <>Connect source <ArrowRight /></>}</button></div><label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><ShieldCheck /> I own or have permission to repurpose this source.</label></form>{notice && <p className="form-notice">{notice}</p>}<small>YouTube uploads and stream replays plus Twitch VODs are supported.</small></section>;
 }

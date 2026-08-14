@@ -43,23 +43,44 @@ async function api(route, body) {
 
 const progress = (job, status, value, error = null) => api('/api/worker/progress', { jobId: job.id, workerId, status, progress: value, error });
 
-async function selectClips(transcript, duration, log) {
+function performanceBrief(job) {
+  if (!job.preferences?.learningEnabled) return '';
+  const winners = job.performanceData?.shorts?.slice(0, 3) || [];
+  if (!winners.length) return '';
+  return winners.map((clip, index) => `${index + 1}. "${clip.title}" — ${clip.views} views, ${clip.averageViewDuration}s average view, ${clip.likes + clip.comments} engagements`).join('\n');
+}
+
+function captionStyle(preferences) {
+  const color = /^#[0-9a-f]{6}$/i.test(preferences.brandColor || '') ? preferences.brandColor : '#C8FF38';
+  if (preferences.captionStyle === 'clean') return { font: 'Poppins', fontSize: 78, primary: '#FFFFFF', outline: '#111111', highlight: color, groupSize: 5 };
+  if (preferences.captionStyle === 'minimal') return { font: 'Poppins', fontSize: 66, primary: '#FFFFFF', outline: '#111111', highlight: '#FFFFFF', groupSize: 7 };
+  return { font: 'Anton', fontSize: 96, primary: '#FFFFFF', outline: '#000000', highlight: color, groupSize: 3 };
+}
+
+function tagsFrom(preferences) {
+  const tags = String(preferences.hashtags || '#Shorts').match(/#[\p{L}\p{N}_]+/gu) || ['#Shorts'];
+  return { line: tags.join(' '), values: tags.map((tag) => tag.slice(1).toLowerCase()).filter(Boolean) };
+}
+
+async function selectClips(transcript, duration, log, job) {
+  const preferences = job.preferences;
   let critique = null;
   let best = [];
   for (let attempt = 0; attempt < 2; attempt++) {
-    const candidates = await findHighlights(transcript, duration, { count: 5, min: 15, max: 32, log, critique });
+    const candidates = await findHighlights(transcript, duration, { count: Math.max(5, preferences.clipsPerVideo), min: preferences.minClipSeconds, max: preferences.maxClipSeconds, log, critique, performanceBrief: performanceBrief(job) });
     const evaluation = await evaluateClips(candidates, { log });
     if (evaluation.passing.length > best.length) best = evaluation.passing;
     if (evaluation.verdict === 'PASS') break;
     critique = evaluation.globalFeedback;
   }
-  return best.slice(0, 5);
+  return best.slice(0, preferences.clipsPerVideo);
 }
 
 async function processJob(job) {
   const log = (message = '') => console.log(`[${job.id.slice(0, 8)}] ${message}`);
   const workDir = ensureDir(path.join(engineRoot, 'work', 'saas', job.tenantId, job.id));
   const outDir = ensureDir(path.join(engineRoot, 'out', 'saas', job.tenantId, job.id));
+  const preferences = { publishMode: 'automatic', clipsPerVideo: 3, minClipSeconds: 15, maxClipSeconds: 32, captionStyle: 'impact', brandColor: '#C8FF38', hashtags: '#Shorts #Minecraft', learningEnabled: true, ...(job.preferences || {}) };
   try {
     await progress(job, 'downloading', 8);
     const source = await download(job.sourceUrl, path.join(workDir, 'download'), { log });
@@ -67,17 +88,20 @@ async function processJob(job) {
     await progress(job, 'transcribing', 24);
     const transcript = await transcribe(source.file, workDir, { language: 'en', log });
     await progress(job, 'selecting', 48);
-    const clips = (await selectClips(transcript, meta.duration, log)).slice(0, Math.max(0, Number(job.maxUploads || 0)));
+    job.preferences = preferences;
+    const clips = (await selectClips(transcript, meta.duration, log, job)).slice(0, Math.max(0, Number(job.maxUploads || 0)));
     if (!clips.length) throw new Error('No clips passed the channel quality gate');
     await progress(job, 'rendering', 62);
     const rendered = [];
-    for (const [index, clip] of clips.entries()) rendered.push(await renderClip(source.file, clip, index, meta, { outDir, workDir, words: transcript.words, captions: true, reframe: 'blur', log }));
+    for (const [index, clip] of clips.entries()) rendered.push(await renderClip(source.file, clip, index, meta, { outDir, workDir, words: transcript.words, captions: true, captionStyle: captionStyle(preferences), reframe: 'blur', log }));
     await progress(job, 'uploading', 84);
     const { accessToken } = await api('/api/worker/youtube-token', { channelId: job.channelId });
     const uploaded = [];
+    const hashtags = tagsFrom(preferences);
+    const requestedPrivacy = preferences.publishMode === 'review' ? 'private' : 'public';
     for (const clip of rendered) {
-      const result = await uploadVideo(clip.file, { title: clip.title, description: `${clip.title}\n\n#Shorts #Minecraft`, tags: ['minecraft', 'shorts'], privacyStatus: 'public' }, { token: accessToken, log });
-      uploaded.push({ title: clip.title, durationSeconds: Number((clip.end - clip.start).toFixed(2)), youtubeVideoId: result.id, youtubeUrl: result.shortUrl });
+      const result = await uploadVideo(clip.file, { title: clip.title, description: `${clip.title}\n\n${hashtags.line}`, tags: hashtags.values, privacyStatus: requestedPrivacy }, { token: accessToken, log });
+      uploaded.push({ title: clip.title, durationSeconds: Number((clip.end - clip.start).toFixed(2)), youtubeVideoId: result.id, youtubeUrl: result.shortUrl, privacyStatus: result.privacyStatus === 'public' ? 'public' : 'private' });
     }
     await api('/api/worker/complete', { jobId: job.id, workerId, clips: uploaded });
     log(`complete: ${uploaded.length} Shorts published`);
