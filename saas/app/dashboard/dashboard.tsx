@@ -454,6 +454,7 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
               <SourcesPanel
                 data={data}
                 onDashboard={setData}
+                onOpenJobs={() => navigate('jobs')}
                 sourceUrl={sourceUrl}
                 setSourceUrl={setSourceUrl}
                 rightsConfirmed={rightsConfirmed}
@@ -661,6 +662,7 @@ function ClipsPanel({
 function SourcesPanel({
   data,
   onDashboard,
+  onOpenJobs,
   sourceUrl,
   setSourceUrl,
   rightsConfirmed,
@@ -672,6 +674,7 @@ function SourcesPanel({
 }: {
   data: DashboardData;
   onDashboard: (dashboard: DashboardData) => void;
+  onOpenJobs: () => void;
   sourceUrl: string;
   setSourceUrl: (value: string) => void;
   rightsConfirmed: boolean;
@@ -688,6 +691,7 @@ function SourcesPanel({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryNotice, setLibraryNotice] = useState('');
+  const [confirmingQueue, setConfirmingQueue] = useState(false);
 
   useEffect(() => {
     const connectedIds = new Set(
@@ -776,10 +780,12 @@ function SourcesPanel({
     });
     const body = await response.json();
     setLibraryLoading(false);
-    if (!response.ok)
+    if (!response.ok) {
+      setConfirmingQueue(false);
       return setLibraryNotice(
         body.error || 'Selected videos could not be queued.',
       );
+    }
     if (body.dashboard) onDashboard(body.dashboard);
     setPastVideos((current) =>
       current.map((video) =>
@@ -789,15 +795,56 @@ function SourcesPanel({
       ),
     );
     setSelectedKeys([]);
+    setConfirmingQueue(false);
     setLibraryNotice(
       `${body.queued} video${body.queued === 1 ? '' : 's'} queued for analysis and publishing${body.skipped ? `; ${body.skipped} already existed` : ''}.`,
     );
+    onOpenJobs();
   }
 
-  const selectableKeys = pastVideos
+  const videoRounds = useMemo(() => {
+    const videosBySource = new Map<string, LibraryVideo[]>();
+    for (const video of pastVideos) {
+      videosBySource.set(video.sourceId, [
+        ...(videosBySource.get(video.sourceId) || []),
+        video,
+      ]);
+    }
+    const creatorVideos = [...videosBySource.values()].map((videos) =>
+      [...videos].sort(
+        (first, second) =>
+          new Date(second.publishedAt).getTime() -
+          new Date(first.publishedAt).getTime(),
+      ),
+    );
+    const roundCount = Math.max(0, ...creatorVideos.map((videos) => videos.length));
+    return Array.from({ length: roundCount }, (_, rank) => ({
+      rank,
+      videos: creatorVideos.flatMap((videos) =>
+        videos[rank] ? [videos[rank]] : [],
+      ),
+    })).filter((round) => round.videos.length);
+  }, [pastVideos]);
+
+  const orderedVideos = videoRounds.flatMap((round) => round.videos);
+  const selectableKeys = orderedVideos
     .filter((video) => !video.alreadyQueued)
     .map(videoKey)
     .slice(0, 20);
+  const selectedSourceCount = new Set(
+    orderedVideos
+      .filter((video) => selectedKeys.includes(videoKey(video)))
+      .map((video) => video.sourceId),
+  ).size;
+
+  useEffect(() => {
+    if (!confirmingQueue) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !libraryLoading) setConfirmingQueue(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [confirmingQueue, libraryLoading]);
   return (
     <section className="tab-panel sources-tab">
       <div className="tab-heading">
@@ -901,8 +948,8 @@ function SourcesPanel({
               <p className="overline">Manual backfill</p>
               <h3>Analyze and post from past videos</h3>
               <p>
-                Select multiple sources, mix their exact uploads or VODs, and
-                send one combined batch.
+                Every creator gets a fair spot: all latest uploads appear
+                before any creator's second-latest video.
               </p>
             </div>
           </div>
@@ -977,44 +1024,78 @@ function SourcesPanel({
                 per batch
               </span>
             </div>
-            <div className="past-video-grid">
-              {pastVideos.map((video) => {
-                const key = videoKey(video);
-                const selected = selectedKeys.includes(key);
-                return (
-                  <label
-                    className={`${video.alreadyQueued ? 'queued' : ''} ${selected ? 'selected' : ''}`}
-                    key={key}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => toggleVideo(video)}
-                      disabled={video.alreadyQueued}
-                    />
-                    {video.thumbnailUrl ? (
-                      <img src={video.thumbnailUrl} alt="" loading="lazy" />
-                    ) : (
-                      <span className="video-placeholder">
-                        <Play />
-                      </span>
-                    )}
+            <div className="video-rounds">
+              {videoRounds.map((round) => (
+                <section
+                  className="video-round"
+                  aria-labelledby={`video-round-${round.rank}`}
+                  key={round.rank}
+                >
+                  <div className="video-round-head">
                     <div>
-                      <small>
-                        {video.alreadyQueued
-                          ? 'ALREADY QUEUED'
-                          : `${video.sourceTitle} / ${video.platform.toUpperCase()}`}
-                      </small>
-                      <b>{video.title}</b>
-                      <time>
-                        {video.publishedAt
-                          ? new Date(video.publishedAt).toLocaleDateString()
-                          : 'Past upload'}
-                      </time>
+                      <span>ROUND {round.rank + 1}</span>
+                      <h4 id={`video-round-${round.rank}`}>
+                        {round.rank === 0
+                          ? 'Latest from every creator'
+                          : round.rank === 1
+                            ? 'Second-latest from every creator'
+                            : round.rank === 2
+                              ? 'Third-latest from every creator'
+                              : `Previous uploads · round ${round.rank + 1}`}
+                      </h4>
                     </div>
-                  </label>
-                );
-              })}
+                    <small>
+                      {round.videos.length} creator
+                      {round.videos.length === 1 ? '' : 's'} represented
+                    </small>
+                  </div>
+                  <div className="past-video-grid">
+                    {round.videos.map((video) => {
+                      const key = videoKey(video);
+                      const selected = selectedKeys.includes(key);
+                      return (
+                        <label
+                          className={`${video.alreadyQueued ? 'queued' : ''} ${selected ? 'selected' : ''}`}
+                          key={key}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleVideo(video)}
+                            disabled={video.alreadyQueued}
+                          />
+                          {video.thumbnailUrl ? (
+                            <img
+                              src={video.thumbnailUrl}
+                              alt=""
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="video-placeholder">
+                              <Play />
+                            </span>
+                          )}
+                          <div>
+                            <small>
+                              {video.alreadyQueued
+                                ? 'ALREADY QUEUED'
+                                : `${video.sourceTitle} / ${video.platform.toUpperCase()}`}
+                            </small>
+                            <b>{video.title}</b>
+                            <time>
+                              {video.publishedAt
+                                ? new Date(
+                                    video.publishedAt,
+                                  ).toLocaleDateString()
+                                : 'Past upload'}
+                            </time>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
             <div className="queue-selected-bar">
               <div>
@@ -1029,7 +1110,7 @@ function SourcesPanel({
               </div>
               <button
                 className="button button-primary"
-                onClick={queueSelected}
+                onClick={() => setConfirmingQueue(true)}
                 disabled={libraryLoading || !selectedKeys.length}
               >
                 {libraryLoading ? (
@@ -1044,6 +1125,62 @@ function SourcesPanel({
           </>
         )}
       </section>
+      {confirmingQueue && (
+        <div
+          className="queue-confirm-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !libraryLoading)
+              setConfirmingQueue(false);
+          }}
+        >
+          <div
+            className="queue-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="queue-confirm-title"
+          >
+            <span className="queue-confirm-check">
+              <Check />
+            </span>
+            <p className="overline">Ready to launch</p>
+            <h3 id="queue-confirm-title">Analyze and post this batch?</h3>
+            <p>
+              You selected <b>{selectedKeys.length} videos</b> from{' '}
+              <b>
+                {selectedSourceCount} creator
+                {selectedSourceCount === 1 ? '' : 's'}
+              </b>
+              . ClipForge will use your current caption and publishing settings.
+            </p>
+            <div className="queue-confirm-actions">
+              <button
+                className="button button-ghost"
+                onClick={() => setConfirmingQueue(false)}
+                disabled={libraryLoading}
+              >
+                Go back
+              </button>
+              <button
+                className="button button-primary"
+                onClick={queueSelected}
+                disabled={libraryLoading}
+                autoFocus
+              >
+                {libraryLoading ? (
+                  <>
+                    <LoaderCircle className="spin" /> Queueing batch
+                  </>
+                ) : (
+                  <>
+                    <Check /> Confirm &amp; open jobs
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

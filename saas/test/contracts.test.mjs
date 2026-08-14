@@ -240,6 +240,13 @@ test('users can selectively backfill past videos from multiple owned sources int
   assert.match(dashboard, /librarySourceIds/);
   assert.match(dashboard, /JSON\.stringify\(\{ selections \}\)/);
   assert.match(dashboard, /cross-channel batch/);
+  assert.match(dashboard, /const videoRounds = useMemo/);
+  assert.match(dashboard, /creatorVideos\.flatMap/);
+  assert.match(dashboard, /Latest from every creator/);
+  assert.match(dashboard, /Second-latest from every creator/);
+  assert.match(dashboard, /Analyze and post this batch/);
+  assert.match(dashboard, /Confirm &amp; open jobs/);
+  assert.match(dashboard, /onOpenJobs\(\)/);
   assert.match(dashboard, /Analyze &amp; post selected/);
   assert.match(dashboard, /maximum 20\s+per batch/);
 });
