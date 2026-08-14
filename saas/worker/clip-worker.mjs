@@ -18,7 +18,7 @@ for (const name of ['.env.local', '.env']) {
   }
 }
 
-const [{ download }, { probe, ensureDir }, { transcribe }, { findHighlights }, { evaluateClips }, { renderClip }, { uploadVideo }] = await Promise.all([
+const [{ download, ytdlpVersion }, { probe, ensureDir }, { transcribe }, { findHighlights }, { evaluateClips }, { renderClip }, { uploadVideo }] = await Promise.all([
   import('../../src/download.js'), import('../../src/ffmpeg.js'), import('../../src/transcribe.js'), import('../../src/analyze.js'), import('../../src/evaluate.js'), import('../../src/render.js'), import('../../src/youtube.js'),
 ]);
 
@@ -28,6 +28,13 @@ const workerId = process.env.WORKER_ID || `worker-${randomUUID().slice(0, 8)}`;
 const pollMs = Number(process.env.WORKER_POLL_MS || 15000);
 const once = process.argv.includes('--once');
 const port = Number(process.env.PORT || 0);
+const pythonRuntime = process.env.CFC_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+const installedYtDlpVersion = await ytdlpVersion();
+
+if (!installedYtDlpVersion) {
+  throw new Error(`Worker startup failed: yt-dlp is unavailable through ${pythonRuntime}`);
+}
+console.log(`Worker media runtime ready (yt-dlp ${installedYtDlpVersion}, ${pythonRuntime})`);
 
 if (port > 0) createServer((_request, response) => {
   response.writeHead(200, { 'content-type': 'application/json' });

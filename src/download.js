@@ -3,7 +3,7 @@ import path from 'node:path';
 import { paths } from './config.js';
 import { run, ensureDir } from './ffmpeg.js';
 
-const PY = process.env.CFC_PYTHON || 'python';
+const PY = process.env.CFC_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 
 export async function ytdlpVersion() {
   try {

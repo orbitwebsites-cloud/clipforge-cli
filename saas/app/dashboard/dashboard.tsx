@@ -652,12 +652,19 @@ function JobsPanel({
                   {statusLabels[job.status]} · detected{' '}
                   {relative(job.detectedAt)}
                 </p>
+                {job.status === 'failed' && job.error && (
+                  <p className="job-error" title={job.error}>
+                    {job.error === 'spawn python ENOENT'
+                      ? 'The media worker was unavailable. This job is safe to retry.'
+                      : job.error}
+                  </p>
+                )}
               </div>
               <div className="job-progress">
                 <span>
-                  <i style={{ width: `${job.progress}%` }} />
+                  <i style={{ width: job.status === 'failed' ? '0%' : `${job.progress}%` }} />
                 </span>
-                <small>{job.progress}%</small>
+                <small>{job.status === 'failed' ? 'Failed' : `${job.progress}%`}</small>
               </div>
               <strong>
                 {job.clips.length} clip{job.clips.length === 1 ? '' : 's'}
