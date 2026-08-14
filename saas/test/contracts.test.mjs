@@ -170,7 +170,33 @@ test('Clipping tier has a real $89 checkout and 15-source positioning', () => {
   assert.match(webhook, /\$4='clipping' then 15/);
   assert.match(landing, /\$89/);
   assert.match(landing, /15 continuously monitored/);
-  assert.match(dashboard, /Clipping · \$89/);
+  assert.match(dashboard, /\$89/);
+  assert.match(dashboard, /Upgrade to Clipping/);
+});
+
+test('dashboard navigation uses focused URL-backed tabs with a full centered profile', () => {
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  assert.match(dashboard, /type DashboardTab/);
+  assert.match(dashboard, /url\.searchParams\.set\('tab', tab\)/);
+  assert.match(dashboard, /activeTab === 'analytics'/);
+  assert.match(dashboard, /activeTab === 'jobs'/);
+  assert.match(dashboard, /activeTab === 'clips'/);
+  assert.match(dashboard, /activeTab === 'sources'/);
+  assert.match(dashboard, /activeTab === 'profile'/);
+  assert.match(dashboard, /activeTab === 'settings'/);
+  assert.match(dashboard, /<UserProfile routing="hash"/);
+  assert.match(styles, /\.profile-page\{display:grid;place-items:center/);
+  assert.match(styles, /\.mobile-tabs/);
+});
+
+test('billing makes upgrade and cancellation equally discoverable', () => {
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /upgrade-nav/);
+  assert.match(dashboard, /Upgrade plan/);
+  assert.match(dashboard, /Manage or cancel subscription/);
+  assert.match(dashboard, /whop\.com\/@me\/settings\/orders/);
+  assert.match(dashboard, /no email or support ticket required/);
 });
 
 test('source input accepts handles and reports duplicate channels clearly', () => {

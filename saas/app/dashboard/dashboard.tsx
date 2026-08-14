@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { UserButton } from '@clerk/nextjs';
-import { Activity, ArrowRight, BarChart3, Captions, Check, Clock3, ExternalLink, Eye, Gauge, LayoutDashboard, Link2, LoaderCircle, MessageCircle, Palette, Play, Plus, Radio, RefreshCw, Rocket, Settings, ShieldCheck, SlidersHorizontal, Sparkles, ThumbsUp, Timer, Trash2, TrendingUp, Tv, UploadCloud, Users, WandSparkles } from 'lucide-react';
-import type { ChannelAnalytics, CreatorPreferences, DashboardData, JobStatus } from '@/lib/types';
+import { UserButton, UserProfile } from '@clerk/nextjs';
+import { Activity, ArrowRight, BarChart3, Captions, Check, CircleUserRound, Clock3, CreditCard, ExternalLink, Eye, Gauge, LayoutDashboard, Link2, LoaderCircle, MessageCircle, Palette, Play, Plus, Radio, RefreshCw, Rocket, Settings, ShieldCheck, SlidersHorizontal, Sparkles, ThumbsUp, Timer, Trash2, TrendingUp, Tv, UploadCloud, Users, WandSparkles } from 'lucide-react';
+import type { ChannelAnalytics, CreatorPreferences, DashboardData, Job, JobStatus } from '@/lib/types';
 
 const statusLabels: Record<JobStatus, string> = { queued: 'Queued', downloading: 'Downloading', transcribing: 'Transcribing', selecting: 'Selecting moments', rendering: 'Rendering clips', uploading: 'Publishing', complete: 'Published', failed: 'Needs attention' };
 const stageOrder: JobStatus[] = ['downloading', 'transcribing', 'selecting', 'rendering', 'uploading', 'complete'];
+type DashboardTab = 'overview' | 'analytics' | 'jobs' | 'clips' | 'sources' | 'profile' | 'billing' | 'settings';
+const dashboardTabs = new Set<DashboardTab>(['overview', 'analytics', 'jobs', 'clips', 'sources', 'profile', 'billing', 'settings']);
 
 function relative(value: string) {
   const minutes = Math.max(1, Math.round((Date.now() - new Date(value).getTime()) / 60000));
@@ -16,6 +18,7 @@ function relative(value: string) {
 
 export default function Dashboard({ initial }: { initial: DashboardData }) {
   const [data, setData] = useState(initial);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [sourceUrl, setSourceUrl] = useState('');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -25,6 +28,23 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
   const completedClips = data.jobs.flatMap((job) => job.clips).filter((clip) => ['uploaded', 'review'].includes(clip.status));
   const deadlineRemaining = active ? Math.max(0, new Date(active.deadlineAt).getTime() - Date.now()) : 0;
   const remainingLabel = useMemo(() => `${String(Math.floor(deadlineRemaining / 3600000)).padStart(2, '0')}:${String(Math.floor(deadlineRemaining % 3600000 / 60000)).padStart(2, '0')}`, [deadlineRemaining]);
+
+  useEffect(() => {
+    const syncTab = () => {
+      const requested = new URLSearchParams(window.location.search).get('tab') as DashboardTab | null;
+      if (requested && dashboardTabs.has(requested)) setActiveTab(requested);
+    };
+    syncTab();
+    window.addEventListener('popstate', syncTab);
+    return () => window.removeEventListener('popstate', syncTab);
+  }, []);
+
+  function navigate(tab: DashboardTab) {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    window.history.pushState({}, '', url);
+  }
 
   async function addSource(event: React.FormEvent) {
     event.preventDefault(); setSaving(true); setNotice('');
@@ -61,42 +81,61 @@ export default function Dashboard({ initial }: { initial: DashboardData }) {
   return <main className="app-shell">
     <aside className="sidebar">
       <Link className="brand" href="/"><span className="brand-mark"><Play size={15} fill="currentColor" /></span>ClipForge <em>Cloud</em></Link>
-      <nav className="side-nav"><a className="active" href="#overview"><LayoutDashboard /> Overview</a>{destination && <><a href="#analytics"><BarChart3 /> Analytics</a><a href="#jobs"><Activity /> Jobs <span>{data.jobs.length}</span></a><a href="#clips"><Captions /> Clips</a><a href="#channels"><Tv /> Sources <span>{data.sourceChannels.length}</span></a></>}</nav>
-      <div className="side-bottom"><a href="#settings"><Settings /> Settings</a><div className="account-chip"><UserButton /><div><b>{data.tenant.name}</b><small>{data.tenant.email}</small></div></div></div>
+      <nav className="side-nav">
+        <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => navigate('overview')}><LayoutDashboard /> Overview</button>
+        <button className={activeTab === 'analytics' ? 'active' : ''} onClick={() => navigate('analytics')} disabled={!destination}><BarChart3 /> Analytics</button>
+        <button className={activeTab === 'jobs' ? 'active' : ''} onClick={() => navigate('jobs')} disabled={!destination}><Activity /> Jobs <span>{data.jobs.length}</span></button>
+        <button className={activeTab === 'clips' ? 'active' : ''} onClick={() => navigate('clips')} disabled={!destination}><Captions /> Clips</button>
+        <button className={activeTab === 'sources' ? 'active' : ''} onClick={() => navigate('sources')} disabled={!destination}><Tv /> Sources <span>{data.sourceChannels.length}</span></button>
+      </nav>
+      <div className="side-bottom">
+        <button className={activeTab === 'profile' ? 'active' : ''} onClick={() => navigate('profile')}><CircleUserRound /> Profile</button>
+        <button className={`upgrade-nav ${activeTab === 'billing' ? 'active' : ''}`} onClick={() => navigate('billing')}><Rocket /> Upgrade plan <ArrowRight /></button>
+        <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}><Settings /> Settings</button>
+        <div className="account-chip"><UserButton /><div><b>{data.tenant.name}</b><small>{data.tenant.email}</small></div></div>
+      </div>
     </aside>
 
-    <section className="app-main" id="overview">
-      {!destination ? <EmptyOnboarding name={data.tenant.name} /> : <>
-        <header className="app-header"><div><p className="overline">Creator workspace</p><h1>{destination.title}</h1><p>Shorts publish here. Your {data.tenant.plan} plan supports {data.tenant.sourceChannelLimit} source channel{data.tenant.sourceChannelLimit === 1 ? '' : 's'}.</p></div><div className="header-actions"><span className="live-chip"><i /> Destination connected</span><button className="button button-dark" onClick={() => document.querySelector('#channels')?.scrollIntoView()}><Plus size={17} /> Add source</button></div></header>
+    <section className="app-main">
+      <nav className="mobile-tabs" aria-label="Dashboard tabs">
+        {(['overview','analytics','jobs','clips','sources','profile','billing','settings'] as DashboardTab[]).map((tab) => <button key={tab} className={activeTab === tab ? 'active' : ''} onClick={() => navigate(tab)} disabled={!destination && ['analytics','jobs','clips','sources'].includes(tab)}>{tab === 'billing' ? 'Upgrade' : tab}</button>)}
+      </nav>
 
-        {!data.sourceChannels.length ? <SourceOnboarding destination={destination.title} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} rightsConfirmed={rightsConfirmed} setRightsConfirmed={setRightsConfirmed} addSource={addSource} saving={saving} notice={notice} /> : <>
-          <div className="metrics-grid">
-            <article><div><span className="metric-icon green"><Gauge /></span><small>SLA delivery</small></div><b>{data.sla.deliveredOnTimePercent}%</b><p>within 3 hours</p></article>
-            <article><div><span className="metric-icon purple"><Captions /></span><small>Clips this month</small></div><b>{data.tenant.clipsThisMonth}</b><p>of {data.tenant.monthlyClipLimit} included</p></article>
-            <article><div><span className="metric-icon orange"><Clock3 /></span><small>Average turnaround</small></div><b>{data.sla.averageMinutes || '—'}{data.sla.averageMinutes ? 'm' : ''}</b><p>from detection to live</p></article>
-            <article><div><span className="metric-icon red"><Radio /></span><small>Source channels</small></div><b>{data.sourceChannels.length}</b><p>actively monitored</p></article>
-          </div>
+      {activeTab === 'profile' ? <ProfilePanel data={data} /> : activeTab === 'settings' ? <SettingsPanel initial={data.preferences} onSaved={(dashboard) => setData(dashboard)} /> : activeTab === 'billing' ? <BillingPanel data={data} saving={saving} startCheckout={startCheckout} /> : !destination ? <EmptyOnboarding name={data.tenant.name} /> : <>
+        <header className="app-header"><div><p className="overline">{activeTab === 'overview' ? 'Creator workspace' : 'Workspace tab'}</p><h1>{activeTab === 'overview' ? destination.title : activeTab[0].toUpperCase() + activeTab.slice(1)}</h1><p>{activeTab === 'overview' ? `Shorts publish here. Your ${data.tenant.plan} plan supports ${data.tenant.sourceChannelLimit} source channels.` : `A focused view of your ${activeTab}.`}</p></div><div className="header-actions"><span className="live-chip"><i /> Destination connected</span><button className="button button-dark" onClick={() => navigate('sources')}><Plus size={17} /> Add source</button></div></header>
 
-          {active && <article className="active-job" id="jobs"><div className="active-top"><div><span className="status-badge"><LoaderCircle className="spin" /> Processing now</span><h2>{active.sourceTitle}</h2><p>Detected {relative(active.detectedAt)} · {statusLabels[active.status]}</p></div><div className="deadline"><small>Time remaining</small><b>{remainingLabel}</b><span>{data.sla.targetMinutes === 180 ? 'Creator priority · 3-hour target' : 'Standard queue'}</span></div></div><div className="progress-track"><i style={{ width: `${active.progress}%` }} /></div><div className="stages">{stageOrder.map((stage, index) => { const current = stageOrder.indexOf(active.status); const done = current > index || active.status === 'complete'; return <div className={done ? 'done' : current === index ? 'current' : ''} key={stage}><span>{done ? <Check /> : index + 1}</span><b>{statusLabels[stage]}</b></div>; })}</div></article>}
-
-          <div className="dashboard-columns">
-            <section className="panel" id="clips"><div className="panel-header"><div><p className="overline">Recent output</p><h2>Published clips</h2></div></div><div className="clip-list">{completedClips.length ? completedClips.map((clip) => <div className="clip-row" key={clip.id}><div className="clip-thumb"><Play fill="currentColor" /></div><a href={clip.youtubeUrl || '#'} target="_blank"><b>{clip.title}</b><p>{clip.durationSeconds}s · {clip.status === 'review' ? 'Private review' : 'YouTube Short'}</p></a>{clip.status === 'review' ? <button className="publish-now" onClick={() => publishClip(clip.id)} disabled={saving}><Rocket /> Publish</button> : <span className="published-dot">Live</span>}<a href={clip.youtubeUrl || '#'} target="_blank" aria-label={`Open ${clip.title}`}><ExternalLink /></a></div>) : <div className="empty-state"><UploadCloud /><b>Your first clips will appear here</b><p>We are watching your source channels for new uploads.</p></div>}</div></section>
-
-            <section className="panel setup-panel" id="channels"><div className="panel-header"><div><p className="overline">Input channels</p><h2>Clip sources</h2></div><span className="step-count">{data.sourceChannels.length} active</span></div>
-              <div className="source-list">{data.sourceChannels.map((source) => <div className="source-item" key={source.id}><span><Radio /></span><div><b>{source.title}</b><p>{source.platform === 'twitch' ? 'Twitch' : 'YouTube'} · {source.handle || source.platformLogin || source.platformUserId}</p></div><button aria-label={`Remove ${source.title}`} onClick={() => removeSource(source.id)} disabled={saving}><Trash2 /></button></div>)}</div>
-              <form className="channel-form" onSubmit={addSource}><label htmlFor="channel"><Link2 /> Add a YouTube or Twitch source</label><div><input id="channel" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/@creator or twitch.tv/creator" required /><button disabled={saving || !rightsConfirmed || data.sourceChannels.length >= data.tenant.sourceChannelLimit}>{saving ? <LoaderCircle className="spin" /> : <Plus />}</button></div><label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><ShieldCheck /> I own or have permission to repurpose this source.</label><small>Channel, stream, and VOD links work. Replays are clipped automatically after streams end.</small></form>{notice && <p className="form-notice">{notice}</p>}
-            </section>
-          </div>
-        </>}
-
-        <AnalyticsPanel destinationId={destination.id} />
-
-        <SettingsPanel initial={data.preferences} onSaved={(dashboard) => setData(dashboard)} />
-
-        <section className="billing-banner" id="billing"><div><span className="feature-icon purple"><Sparkles /></span><div><p className="overline">{data.tenant.plan} plan{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</p><h2>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit} uploads this month</h2><p>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit} source channels connected.</p></div></div><div className="billing-actions"><a className="button button-ghost" href="/api/auth/youtube/start">Change destination</a>{!data.tenant.complimentaryCreator && data.tenant.plan === 'free' && <><button className="button button-ghost" onClick={() => startCheckout('creator')} disabled={saving}>Creator · $49</button><button className="button button-ghost" onClick={() => startCheckout('creator', 'annual')} disabled={saving}>Creator yearly · Save $68</button></>}{!data.tenant.complimentaryCreator && ['free','creator'].includes(data.tenant.plan) && <button className="button button-primary" onClick={() => startCheckout('clipping')} disabled={saving}>Clipping · $89 <ArrowRight /></button>}</div></section>
+        {activeTab === 'overview' && (!data.sourceChannels.length ? <SourceOnboarding destination={destination.title} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} rightsConfirmed={rightsConfirmed} setRightsConfirmed={setRightsConfirmed} addSource={addSource} saving={saving} notice={notice} /> : <><div className="metrics-grid"><article><div><span className="metric-icon green"><Gauge /></span><small>SLA delivery</small></div><b>{data.sla.deliveredOnTimePercent}%</b><p>within 3 hours</p></article><article><div><span className="metric-icon purple"><Captions /></span><small>Clips this month</small></div><b>{data.tenant.clipsThisMonth}</b><p>of {data.tenant.monthlyClipLimit} included</p></article><article><div><span className="metric-icon orange"><Clock3 /></span><small>Average turnaround</small></div><b>{data.sla.averageMinutes || '—'}{data.sla.averageMinutes ? 'm' : ''}</b><p>from detection to live</p></article><article><div><span className="metric-icon red"><Radio /></span><small>Source channels</small></div><b>{data.sourceChannels.length}</b><p>actively monitored</p></article></div>{active && <ActiveJob job={active} remainingLabel={remainingLabel} targetMinutes={data.sla.targetMinutes} />}</>)}
+        {activeTab === 'analytics' && <AnalyticsPanel destinationId={destination.id} />}
+        {activeTab === 'jobs' && <JobsPanel jobs={data.jobs} active={active} remainingLabel={remainingLabel} targetMinutes={data.sla.targetMinutes} />}
+        {activeTab === 'clips' && <ClipsPanel clips={completedClips} saving={saving} publishClip={publishClip} />}
+        {activeTab === 'sources' && <SourcesPanel data={data} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} rightsConfirmed={rightsConfirmed} setRightsConfirmed={setRightsConfirmed} addSource={addSource} removeSource={removeSource} saving={saving} notice={notice} />}
       </>}
     </section>
   </main>;
+}
+
+function ActiveJob({ job, remainingLabel, targetMinutes }: { job: Job; remainingLabel: string; targetMinutes: number }) {
+  return <article className="active-job"><div className="active-top"><div><span className="status-badge"><LoaderCircle className="spin" /> Processing now</span><h2>{job.sourceTitle}</h2><p>Detected {relative(job.detectedAt)} · {statusLabels[job.status]}</p></div><div className="deadline"><small>Time remaining</small><b>{remainingLabel}</b><span>{targetMinutes === 180 ? 'Priority · 3-hour target' : 'Standard queue'}</span></div></div><div className="progress-track"><i style={{ width: `${job.progress}%` }} /></div><div className="stages">{stageOrder.map((stage, index) => { const current = stageOrder.indexOf(job.status); const done = current > index || job.status === 'complete'; return <div className={done ? 'done' : current === index ? 'current' : ''} key={stage}><span>{done ? <Check /> : index + 1}</span><b>{statusLabels[stage]}</b></div>; })}</div></article>;
+}
+
+function JobsPanel({ jobs, active, remainingLabel, targetMinutes }: { jobs: Job[]; active?: Job; remainingLabel: string; targetMinutes: number }) {
+  return <section className="tab-panel jobs-tab"><div className="tab-heading"><div><p className="overline">Production queue</p><h2>Every clipping job</h2><p>Follow each source from detection through publishing.</p></div><span className="tab-count">{jobs.length} total</span></div>{active && <ActiveJob job={active} remainingLabel={remainingLabel} targetMinutes={targetMinutes} />}<div className="job-history">{jobs.length ? jobs.map((job) => <article key={job.id}><span className={`job-status ${job.status}`}><Activity /></span><div><b>{job.sourceTitle}</b><p>{statusLabels[job.status]} · detected {relative(job.detectedAt)}</p></div><div className="job-progress"><span><i style={{ width: `${job.progress}%` }} /></span><small>{job.progress}%</small></div><strong>{job.clips.length} clip{job.clips.length === 1 ? '' : 's'}</strong></article>) : <div className="empty-state"><Activity /><b>No jobs yet</b><p>New source uploads will enter the queue automatically.</p></div>}</div></section>;
+}
+
+function ClipsPanel({ clips, saving, publishClip }: { clips: DashboardData['jobs'][number]['clips']; saving: boolean; publishClip: (clipId: string) => void }) {
+  return <section className="tab-panel"><div className="tab-heading"><div><p className="overline">Content library</p><h2>Published and review-ready Shorts</h2><p>Open live uploads or approve private review clips.</p></div><span className="tab-count">{clips.length} clips</span></div><div className="clip-library">{clips.length ? clips.map((clip) => <article className="clip-card" key={clip.id}><div className="clip-card-thumb"><Play fill="currentColor" /></div><div><span>{clip.status === 'review' ? 'PRIVATE REVIEW' : 'LIVE ON YOUTUBE'}</span><h3>{clip.title}</h3><p>{clip.durationSeconds}s · {clip.privacyStatus || 'processing'}</p></div><div className="clip-card-actions">{clip.status === 'review' && <button className="button button-primary" onClick={() => publishClip(clip.id)} disabled={saving}><Rocket /> Publish</button>}<a className="button button-ghost" href={clip.youtubeUrl || '#'} target="_blank">Open <ExternalLink /></a></div></article>) : <div className="empty-state"><UploadCloud /><b>Your first clips will appear here</b><p>We are watching your source channels for new uploads.</p></div>}</div></section>;
+}
+
+function SourcesPanel({ data, sourceUrl, setSourceUrl, rightsConfirmed, setRightsConfirmed, addSource, removeSource, saving, notice }: { data: DashboardData; sourceUrl: string; setSourceUrl: (value: string) => void; rightsConfirmed: boolean; setRightsConfirmed: (value: boolean) => void; addSource: (event: React.FormEvent) => void; removeSource: (id: string) => void; saving: boolean; notice: string }) {
+  return <section className="tab-panel sources-tab"><div className="tab-heading"><div><p className="overline">Always-on inputs</p><h2>Source channels</h2><p>ClipForge watches these channels, streams, and VODs for new moments.</p></div><span className="tab-count">{data.sourceChannels.length} / {data.tenant.sourceChannelLimit}</span></div><div className="sources-layout"><div className="source-roster">{data.sourceChannels.length ? data.sourceChannels.map((source) => <article key={source.id}><span><Radio /></span><div><b>{source.title}</b><p>{source.platform === 'twitch' ? 'Twitch' : 'YouTube'} · {source.handle || source.platformLogin || source.platformUserId}</p><small>Monitoring active</small></div><button aria-label={`Remove ${source.title}`} onClick={() => removeSource(source.id)} disabled={saving}><Trash2 /></button></article>) : <div className="empty-state"><Radio /><b>No sources connected</b><p>Add your first source to begin monitoring.</p></div>}</div><aside className="source-connect-card"><span className="feature-icon"><Plus /></span><h3>Add another source</h3><p>YouTube channels, uploads, live replays, Twitch channels, and VOD links work.</p><form className="channel-form" onSubmit={addSource}><label htmlFor="source-channel"><Link2 /> Source URL or handle</label><div><input id="source-channel" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/@creator" required /><button aria-label="Connect source" disabled={saving || !rightsConfirmed || data.sourceChannels.length >= data.tenant.sourceChannelLimit}>{saving ? <LoaderCircle className="spin" /> : <ArrowRight />}</button></div><label className="rights-check"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><ShieldCheck /> I own or have permission to repurpose this source.</label></form>{notice && <p className="form-notice">{notice}</p>}</aside></div></section>;
+}
+
+function ProfilePanel({ data }: { data: DashboardData }) {
+  return <section className="profile-page"><div className="profile-intro"><span className="profile-orbit"><CircleUserRound /></span><p className="overline">Your ClipForge identity</p><h1>Profile and security</h1><p>Manage your name, connected sign-in methods, password, active devices, and account security.</p><div className="profile-facts"><span><b>{data.tenant.plan}</b> plan</span><span><b>{data.channels[0]?.title || 'No destination'}</b> destination</span><span><b>{data.sourceChannels.length}</b> sources</span></div></div><div className="profile-clerk"><UserProfile routing="hash" /></div></section>;
+}
+
+function BillingPanel({ data, saving, startCheckout }: { data: DashboardData; saving: boolean; startCheckout: (plan: 'creator' | 'clipping', billingCycle?: 'monthly' | 'annual') => void }) {
+  return <section className="billing-page"><div className="tab-heading"><div><p className="overline">Plan and billing</p><h2>Scale the publishing engine</h2><p>Upgrade, review usage, update payment details, or cancel without contacting support.</p></div><span className="current-plan"><Sparkles /> {data.tenant.plan}{data.tenant.complimentaryCreator ? ' · lifetime' : ''}</span></div><div className="usage-strip"><article><small>Monthly clips</small><b>{data.tenant.clipsThisMonth} / {data.tenant.monthlyClipLimit}</b><span><i style={{ width: `${Math.min(100, data.tenant.clipsThisMonth / Math.max(1, data.tenant.monthlyClipLimit) * 100)}%` }} /></span></article><article><small>Source channels</small><b>{data.sourceChannels.length} / {data.tenant.sourceChannelLimit}</b><span><i style={{ width: `${Math.min(100, data.sourceChannels.length / Math.max(1, data.tenant.sourceChannelLimit) * 100)}%` }} /></span></article></div><div className="upgrade-grid"><article><span>CREATOR</span><h3>$49<small>/month</small></h3><p>Five sources and 150 finished Shorts for your own content network.</p><button className="button button-dark" onClick={() => startCheckout('creator')} disabled={saving || data.tenant.plan !== 'free'}>{data.tenant.plan === 'creator' ? 'Current plan' : 'Choose Creator'}</button></article><article className="featured"><span>CLIPPING</span><h3>$89<small>/month</small></h3><p>Fifteen sources for operators managing a full creator roster.</p><button className="button button-primary" onClick={() => startCheckout('clipping')} disabled={saving || ['clipping','studio'].includes(data.tenant.plan)}>{data.tenant.plan === 'clipping' ? 'Current plan' : 'Upgrade to Clipping'}</button></article></div><article className="cancel-card"><div><span className="cancel-icon"><CreditCard /></span><div><h3>Billing controls stay in your hands</h3><p>Open Whop’s self-service billing portal to update payment details, view invoices, or cancel your subscription immediately—no email or support ticket required.</p></div></div><a className="button button-ghost" href="https://whop.com/@me/settings/orders/" target="_blank" rel="noreferrer">Manage or cancel subscription <ExternalLink /></a></article></section>;
 }
 
 function SettingsPanel({ initial, onSaved }: { initial: CreatorPreferences; onSaved: (dashboard: DashboardData) => void }) {
