@@ -37,6 +37,7 @@ import {
   UploadCloud,
   Users,
   WandSparkles,
+  X,
 } from 'lucide-react';
 import type {
   ChannelAnalytics,
@@ -565,6 +566,28 @@ export default function Dashboard({
           </>
         )}
       </section>
+
+      {/* Fixed bottom nav — mobile only, Whop-style */}
+      <nav className="bottom-nav" aria-label="Main navigation">
+        {(
+          [
+            { tab: 'overview' as DashboardTab, icon: <LayoutDashboard />, label: 'Home' },
+            { tab: 'jobs' as DashboardTab, icon: <Activity />, label: 'Jobs' },
+            { tab: 'clips' as DashboardTab, icon: <Play />, label: 'Clips' },
+            { tab: 'sources' as DashboardTab, icon: <Tv />, label: 'Sources' },
+            { tab: 'profile' as DashboardTab, icon: <CircleUserRound />, label: 'Profile' },
+          ]
+        ).map(({ tab, icon, label }) => (
+          <button
+            key={tab}
+            className={activeTab === tab ? 'active' : ''}
+            onClick={() => navigate(tab)}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
+      </nav>
     </main>
   );
 }

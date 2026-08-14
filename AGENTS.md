@@ -151,11 +151,12 @@ powershell -ExecutionPolicy Bypass -File scripts\install-scheduler.ps1 -Remove
 
 Logs land in `work/logs/post-YYYY-MM-DD.log`. Queue state is `work/queue.json`.
 
-The daily producer task (`ClipForge Discover 0030`) checks the active creator
-feeds at 00:30, processes up to two fresh videos into five captioned Shorts
-each, and pauses discovery whenever at least ten clips are pending. Its logs
-are `work/logs/agent-YYYY-MM-DD.log`; install or remove it with
-`scripts\install-agent-scheduler.ps1`.
+The producer watcher (`ClipForge Watch`) checks the active creator feeds every
+two minutes, processes up to two fresh videos into five captioned Shorts each,
+and gives those clips priority in the publishing queue. It runs one producer at
+a time, starts immediately when installed, and restarts at Windows logon. Its
+logs are `work/logs/agent-watch-YYYY-MM-DD.log`; install or remove it with
+`scripts\install-agent-scheduler.ps1` (`-PollSeconds 60` changes the cadence).
 
 `post-next` takes an advisory lock (`work/queue.lock`, stale after 30 min) so
 overlapping slots cannot double-post. It exits 0 on daily-ceiling failures and

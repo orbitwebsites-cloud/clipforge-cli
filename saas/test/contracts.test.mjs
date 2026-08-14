@@ -302,3 +302,33 @@ test('Twitch sources use official Helix, signed EventSub, and VOD polling fallba
   assert.match(poll, /latestTwitchVods/);
   assert.match(migration, /platform in \('youtube','twitch'\)/);
 });
+
+test('system pages cover success, cancellation, missing routes, failures, and long waits', () => {
+  const success = readFileSync(new URL('../app/success/page.tsx', import.meta.url), 'utf8');
+  const cancelled = readFileSync(new URL('../app/cancelled/page.tsx', import.meta.url), 'utf8');
+  const notFound = readFileSync(new URL('../app/not-found.tsx', import.meta.url), 'utf8');
+  const error = readFileSync(new URL('../app/error.tsx', import.meta.url), 'utf8');
+  const globalError = readFileSync(new URL('../app/global-error.tsx', import.meta.url), 'utf8');
+  const loading = readFileSync(new URL('../app/loading.tsx', import.meta.url), 'utf8');
+  const dashboardLoading = readFileSync(new URL('../app/dashboard/loading.tsx', import.meta.url), 'utf8');
+  const dashboardError = readFileSync(new URL('../app/dashboard/error.tsx', import.meta.url), 'utf8');
+  const checkout = readFileSync(new URL('../app/api/billing/checkout/route.ts', import.meta.url), 'utf8');
+  const youtubeCallback = readFileSync(new URL('../app/api/auth/youtube/callback/route.ts', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../app/dashboard/dashboard.tsx', import.meta.url), 'utf8');
+  const proxy = readFileSync(new URL('../proxy.ts', import.meta.url), 'utf8');
+  assert.match(success, /YouTube is connected/);
+  assert.match(cancelled, /No charge was made/);
+  assert.match(notFound, /code="404"/);
+  assert.match(error, /reset/);
+  assert.match(globalError, /Reload ClipForge/);
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(dashboardLoading, /dashboard-skeleton/);
+  assert.match(dashboardError, /Retry dashboard/);
+  assert.match(checkout, /success\?type=checkout/);
+  assert.match(checkout, /cancelled\?from=checkout/);
+  assert.match(youtubeCallback, /success\?type=youtube/);
+  assert.match(dashboard, /library-skeleton/);
+  assert.match(dashboard, /analytics-skeleton/);
+  assert.match(proxy, /success\(\.\*\)/);
+  assert.match(proxy, /cancelled\(\.\*\)/);
+});

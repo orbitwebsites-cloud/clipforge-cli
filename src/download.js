@@ -11,6 +11,23 @@ if (potServerHome) {
   YTDLP_RUNTIME_ARGS.push('--extractor-args', 'youtube:player-client=mweb');
 }
 
+/**
+ * Browser to lift YouTube cookies from, or `none` to send none.
+ *
+ * Without cookies YouTube answers downloads with "Sign in to confirm you're not
+ * a bot" — discovery still works (flat-playlist is a cheaper endpoint), so the
+ * failure shows up only at download time and looks like a yt-dlp crash.
+ *
+ * The POT-token path above is the other fix, but it needs a bgutil server that
+ * is not installed here; cookies need nothing. Firefox is the default because
+ * Chrome and Edge on Windows encrypt their cookie store with app-bound DPAPI,
+ * which yt-dlp cannot read (yt-dlp#10927).
+ */
+const cookieBrowser = (process.env.CFC_YTDLP_COOKIES || 'firefox').trim();
+if (cookieBrowser && cookieBrowser !== 'none') {
+  YTDLP_RUNTIME_ARGS.push('--cookies-from-browser', cookieBrowser);
+}
+
 export async function ytdlpVersion() {
   try {
     const { out } = await run(PY, ['-m', 'yt_dlp', '--version']);
@@ -36,6 +53,15 @@ export async function download(url, workDir, { log = () => {}, maxHeight = 1080 
   const { out: titleOut } = await run(PY, ['-m', 'yt_dlp', ...YTDLP_RUNTIME_ARGS, '--no-playlist', '--print', '%(title)s', '--skip-download', url]);
   const title = titleOut.trim().split('\n').pop() || 'video';
   log(`  "${title}"`);
+
+  // A prior network attempt may have completed the source before the wrapper
+  // was interrupted. Reuse a valid merged file so retries do not redownload
+  // multi-gigabyte videos from scratch.
+  const cached = path.join(dir, 'source.mp4');
+  if (existsSync(cached)) {
+    log('  reusing cached source.mp4');
+    return { file: cached, title };
+  }
 
   await run(
     PY,

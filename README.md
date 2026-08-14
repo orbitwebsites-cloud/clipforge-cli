@@ -47,6 +47,7 @@ makes multi-hour streams viable.
 1. Put your keys in `.env` (copy from `.env.example`):
    ```
    DEEPGRAM_API_KEY=...
+   DEEPGRAM_API_KEY_2=...   # optional, see Throughput
    CEREBRAS_API_KEY=csk-...
    ```
 2. Verify everything resolves:
@@ -173,11 +174,84 @@ Builds a multi-window transcript with a strong moment planted late among weaker
 local peaks, then asserts the reduce pass actually ran (not just started) and
 surfaced it. Needs `CEREBRAS_API_KEY`.
 
+## Throughput
+
+Videos overlap so one video's network waits (yt-dlp, Deepgram, Cerebras) run
+while another saturates the CPU with renders. Four knobs, all env vars:
+
+| var | default | what it caps |
+| --- | --- | --- |
+| `CFC_VIDEO_CONCURRENCY` | 3 | videos in flight |
+| `CFC_RENDER_CONCURRENCY` | 4 | simultaneous ffmpeg renders, globally |
+| `CFC_LLM_CONCURRENCY` | 1 | simultaneous ranking calls |
+| `CFC_YTDLP_COOKIES` | `firefox` | browser to lift YouTube cookies from; `none` to disable |
+
+Measured on an 8-core machine, 1080p source, cheap-blur chain:
+
+```
+renders   N=1  4.3 clips/min      N=4  9.2 clips/min  (x2.13)
+          N=2  5.8 clips/min      N=6  9.4 clips/min  (x2.18)
+```
+
+Render concurrency plateaus at 4 — ffmpeg already slice-threads across every
+core, so extra processes only recover the single-threaded gaps (filter setup,
+muxing, I/O). Six buys 2% for more memory and disk churn.
+
+Two real videos (46 min and 39 min sources) end-to-end: **4m45s for 8 clips**.
+
+### What actually limits a large batch
+
+Not CPU, and not money — Deepgram's signup credit covers roughly 775 hours of
+audio, and everything else is free. The ceiling is **Cerebras tokens-per-minute
+on the free tier**. A single 46-minute video's map pass is six sequential
+windows, which alone trips 429s; the client retries with backoff and gets
+through, but concurrency multiplies token demand against a fixed limit.
+
+`CFC_LLM_CONCURRENCY=1` exists for that reason. It does not stop the 429s — they
+are inherent to the tier — but it stops concurrent videos from collectively
+exhausting the quota and failing over to Groq, whose free tier is 8k TPM and
+would otherwise end up ranking the batch with the weaker lane exactly when
+throughput matters.
+
+Raising `CFC_VIDEO_CONCURRENCY` past ~3 mostly buys more simultaneous 1080p
+downloads on disk. A 46-minute source is ~700 MB before its audio is extracted.
+
+### Multiple Deepgram keys
+
+`DEEPGRAM_API_KEY_2`, `_3`, … (or `DEEPGRAM_API_KEYS=a,b,c`) are tried in order
+when the one before returns 401/402/403/429, so a batch survives one key's
+balance running out mid-run. Keys minted inside the *same* Deepgram project
+share a balance and buy only failover, not extra credit — `doctor` prints how
+many distinct projects the pool covers.
+
 ## Known limits
+
+### Fresh-upload watcher
+
+Install the background watcher to check every configured creator channel every
+two minutes and begin producing clips from new uploads immediately:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-agent-scheduler.ps1
+# Optional: poll every minute
+powershell -ExecutionPolicy Bypass -File scripts\install-agent-scheduler.ps1 -PollSeconds 60
+```
+
+The watcher starts immediately, restarts at Windows logon, and keeps only one
+producer active at a time. Freshly discovered clips enter the publishing queue
+at priority 100, so they take the next paced posting slot without bulk-uploading
+the whole batch. Logs are written to `work/logs/agent-watch-YYYY-MM-DD.log`.
 
 - **No speaker tracking in the CLI.** See reframe modes above.
 - URL input needs yt-dlp on the same Python as `python -m yt_dlp`. Override the
   interpreter with `CFC_PYTHON` if you use a venv.
+- **YouTube requires cookies to download.** Without them it answers "Sign in to
+  confirm you're not a bot" — and only at download time, since discovery uses a
+  cheaper endpoint that still works, so it surfaces as a bare yt-dlp exit 1.
+  Firefox is the default source because Chrome and Edge on Windows encrypt their
+  cookie stores with app-bound DPAPI that yt-dlp cannot read (yt-dlp#10927). The
+  POT-token path in `download.js` is the alternative, but it needs a bgutil
+  server built at `CFC_YTDLP_POT_SERVER_HOME`.
 - Deepgram bills by balance, so there is no daily audio cap to hit — but an
   exhausted balance fails outright rather than throttling. The client retries
   429/5xx with backoff.

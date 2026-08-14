@@ -1,4 +1,5 @@
 import { chatWithFailover, resolveCerebrasModel } from './providers.js';
+import * as cache from './cache.js';
 
 /**
  * Map-pass window size, set by the SMALLER of the two providers.
@@ -63,22 +64,43 @@ export function extractJson(text) {
   throw new Error(`Unterminated JSON in model response:\n${text.slice(0, 400)}`);
 }
 
-const SYSTEM = `You find self-contained viral short-form clips inside long videos.
+const SYSTEM = `You find viral short-form clips inside long Minecraft SMP videos.
+Target: clips that stop scrollers on YouTube Shorts, get rewatched, and hit 10k+ views.
 
-Rules:
-- A clip must make complete sense to someone who has NOT seen the rest of the video.
-- Start ON visible action, conflict, a challenge, or a surprising claim. The first 1-2 seconds must create a question or stakes; never spend them explaining context.
-- Never start mid-sentence or on filler ("so", "um", "and yeah").
-- End on a punchline, payoff, or a clean statement. Never end mid-sentence.
-- Prefer: ambushes, betrayals, clutch escapes, eliminations, contests, puzzles, surprising rules, reveals, strong reactions, and clear before/after outcomes.
-- For Minecraft, favor moments whose stakes are understandable from the gameplay itself and which visibly progress every few seconds.
-- Prefer the shortest range that preserves the hook and payoff. A complete 15-31 second story beats a longer version with setup.
-- Reject: rambling, throat-clearing, pure context-setting, ad reads, intros/outros.
-- Clip length must be between {MIN} and {MAX} seconds.
-- Titles must be 3-7 concrete words, name the conflict/challenge, and create curiosity without lying. Avoid vague revenge formulas, hashtags, episode lore, and generic words such as "unexpected moments".
+NON-NEGOTIABLE RULES (violating any = score 0):
+1. The clip must open on VISIBLE PHYSICAL ACTION in the first 0.5 seconds — a sword swing,
+   explosion, chase, fall, build reveal, or player in clear danger. NEVER open on someone
+   talking to camera or explaining context. The first FRAME is the thumbnail.
+2. Never start mid-sentence or on filler ("so", "um", "and yeah", "okay so").
+3. Never end mid-sentence. End on a punchline, elimination sound, clutch moment, or clear result.
+4. Clip must make complete sense to someone who has NEVER seen the channel before.
+5. Clip length must be between {MIN} and {MAX} seconds.
+
+SCORING FACTORS (what earns a high score):
+  +++ Ambush or counter-ambush — clear aggressor and target, immediate danger
+  +++ Clutch escape — player is about to die, finds a way out in real time
+  +++ Betrayal at a critical moment — base, items, or trust at stake
+  +++ Timed contest — visible timer or countdown, outcome unclear until last second
+  +++ Trap reveal — secret setup paid off in one satisfying moment
+  +++ Strong reaction — genuine surprise/rage/celebration is the whole point
+  ++ Elimination that changes server power balance
+  ++ Build or redstone reveal with clear before/after
+
+NEVER nominate:
+  - Pure dialogue with no on-screen stakes (even if the words sound dramatic)
+  - Revenge-story framing ("he betrayed me so I...") — no action visible
+  - Setup clips that only make sense if you know the server lore
+  - Clips starting on someone explaining what they are ABOUT to do
+  - Intros, outros, sponsor reads, stream downtime
+
+TITLE RULES (3-7 words):
+  - Name the SPECIFIC conflict or challenge, not the category
+  - Create a curiosity gap: viewer must watch to know the outcome
+  - Present-tense or open question. No spoilers of the payoff.
+  - Forbidden: "unexpected", "insane", "crazy", "wild", "you won't believe", hashtags
 
 Return ONLY a JSON array. Each element:
-{"start":"M:SS","end":"M:SS","title":"punchy 3-7 word hook","score":0-100,"reason":"why this works, one sentence"}
+{"start":"M:SS","end":"M:SS","title":"punchy 3-7 word hook","score":0-100,"reason":"why this works — specifically mention what the opening visual is"}
 Order by score, best first. No prose outside the JSON.`;
 
 function buildTranscript(segments) {
@@ -156,21 +178,35 @@ async function askCerebras(transcript, count, min, max, log = () => {}, critique
 }
 
 const SYSTEM_RANK = `You are choosing which short-form clips to publish from a single long video.
+Goal: pick the clips most likely to stop scrollers, get rewatched, and hit 10k+ views on YouTube Shorts.
 
-You will see candidate clips that were found by scanning different parts of the video
-INDEPENDENTLY, so their existing scores are NOT comparable to each other. Ignore them.
-Re-judge every candidate against every other on one consistent scale.
+Existing scores are from isolated windows and are NOT comparable. Ignore them.
+Re-judge every candidate on one consistent scale.
 
-Rank on: immediate conflict/challenge in the first 1-2 seconds, whether it stands alone
-without SMP lore, visible progression, a concrete payoff, specificity, and rewatchability.
-Prefer complete 15-31 second stories. Penalise context-first openings, vague revenge-story
-titles, mild takes, setup with no payoff, static exposition, and near-duplicates of a
-stronger candidate. For Minecraft, ambushes, contests, clutches, betrayals, eliminations,
-surprising rules, and reveals are the proven repeatable formats.
+PRIMARY RANK FACTOR — visual opening (counts 35%):
+  Does the clip's stated opening timestamp land on visible physical action?
+  Ambush, sword swing, explosion, chase, fall, build reveal = high rank.
+  Talking head, context explanation, walking = heavily penalised.
+
+OTHER RANK FACTORS:
+  - Stakes clear in <2 seconds without SMP lore knowledge
+  - Tension escalates continuously — no dead air
+  - Strong ending: elimination, escape, reveal, or reaction
+  - Rewatchability: a twist or near-miss that rewards a second view
+  - Specificity: names the actual thing happening, not vague drama
+
+PENALISE HEAVILY:
+  - Context-first openings (any clip that opens with someone explaining)
+  - Dialogue-only moments, revenge framing with no visible action
+  - Near-duplicates of a higher-scoring candidate (keep the best version only)
+  - Clips > 32s that aren't continuously escalating
+
+Use the full 0-100 range — spread scores out. A clip with a talking-head open should score < 55.
+The top pick should have a score >= 85 only if it genuinely opens on visible action.
 
 Return ONLY a JSON array of the best {KEEP}, best first:
-[{"id":<the candidate's id>,"score":0-100,"reason":"why it beat the others, one sentence"}]
-Use the full 0-100 range; do not cluster everything in the 80s. No prose outside the JSON.`;
+[{"id":<the candidate's id>,"score":0-100,"reason":"one sentence — MUST describe what the opening visual is"}]
+No prose outside the JSON.`;
 
 /** One reduce call: re-score a batch of candidates against each other. */
 async function askRank(items, keep, log) {
@@ -313,8 +349,18 @@ export async function findHighlights(
   duration,
   { count = 5, min = 15, max = 75, log = () => {}, critique = null, performanceBrief = '' } = {}
 ) {
-  const model = await resolveCerebrasModel();
+  // Cache key: transcript content + generation params + critique (feedback changes output).
+  // performanceBrief is deliberately excluded — it's advisory and we don't want channel
+  // stats to cause a cache miss when nothing meaningful about the clip changed.
   const transcript = buildTranscript(segments);
+  const analysisKey = cache.contentKey(transcript, String(count), String(min), String(max), critique || '');
+  const cachedClips = cache.get('analysis', analysisKey);
+  if (cachedClips) {
+    log(`  analysis cache hit (${cachedClips.length} clips) — skipped Cerebras calls`);
+    return cachedClips;
+  }
+
+  const model = await resolveCerebrasModel();
   const chunks = windows(transcript);
   log(`  ranking with Cerebras ${model}${chunks.length > 1 ? ` (${chunks.length} windows)` : ''}`);
 
@@ -363,5 +409,6 @@ export async function findHighlights(
     if (picked.length >= count) break;
   }
   if (!picked.length) throw new Error('No usable clips found. Try --min/--max, or a longer video.');
+  cache.set('analysis', analysisKey, picked);
   return picked;
 }

@@ -39,8 +39,14 @@ cfc — headless ClipForge driver on Groq + Cerebras
   cfc app <file|url> [options]   Drive the real ClipForge engine headlessly
   cfc clip <file|url> [options]  Standalone pipeline (no ClipForge, no speaker tracking)
   cfc agent [options]            Discover new SMP videos, clip, and queue posts
+  cfc queue                      Show queue status (index, status, url)
   cfc queue add --dir <folder>   Add rendered clips to the posting queue
-  cfc queue                      Show queue status
+  cfc queue retry <title|index>  Re-queue a specific item (clears error + attempts)
+  cfc queue retry --stuck        Unstick items frozen in 'uploading' state
+  cfc queue cancel <title|index> Remove a pending/failed item (file stays on disk)
+  cfc queue cancel --all-failed  Remove all failed items at once
+  cfc queue move <title|index>   Reprioritize — use --top or --priority <N>
+  cfc queue reset                Reset ALL failed items to pending
   cfc post-next                  Upload one queued clip (what the scheduler runs)
   cfc publish <file|dir>         Upload clips to YouTube (private by default)
   cfc yt-auth                    One-time browser consent to mint a refresh token
@@ -78,6 +84,7 @@ agent options
   --recent <count>   recent uploads checked per channel (default 3)
   --max-videos <n>   maximum fresh videos processed per run (default 2)
   --target-pending <n> skip discovery when this many clips are queued
+  --priority <n>     publishing priority for queued clips (default 0)
   --post             add rendered clips to the posting queue
   Schedule with Windows Task Scheduler or cron for continuous operation.
 
@@ -103,20 +110,45 @@ async function doctor() {
   ytv ? ok(`yt-dlp   ${ytv}`) : warn('yt-dlp not found — URL input disabled (python -m pip install -U yt-dlp)');
 
   log('\nDeepgram (transcription)');
-  if (!config.deepgramKey) bad('DEEPGRAM_API_KEY not set in .env');
+  const dgKeys = config.deepgramKeys;
+  if (!dgKeys.length) bad('DEEPGRAM_API_KEY not set in .env');
   else {
-    try {
-      // Deepgram has no model-catalog endpoint; /projects is the cheapest call
-      // that proves the key authenticates. A member-scoped key can 403 here
-      // while still transcribing fine, so that case is a warning, not a failure.
-      const res = await fetch(`${config.deepgramBase}/projects`, {
-        headers: { Authorization: `Token ${config.deepgramKey}` },
-      });
-      if (res.ok) ok(`key valid — transcription model: ${config.deepgramModel}`);
-      else if (res.status === 403) warn(`key lacks project scope (403) — transcription may still work. Model: ${config.deepgramModel}`);
-      else bad(`key rejected (HTTP ${res.status})`);
-    } catch (err) {
-      bad(`request failed: ${err.message.split('\n')[0]}`);
+    const projects = new Set();
+    for (const [i, key] of dgKeys.entries()) {
+      const label = dgKeys.length > 1 ? `key ${i + 1}/${dgKeys.length}` : 'key';
+      try {
+        // Deepgram has no model-catalog endpoint; /projects is the cheapest call
+        // that proves the key authenticates. A member-scoped key can 403 here
+        // while still transcribing fine, so that case is a warning, not a failure.
+        const res = await fetch(`${config.deepgramBase}/projects`, {
+          headers: { Authorization: `Token ${key}` },
+        });
+        if (res.ok) {
+          for (const p of (await res.json()).projects || []) projects.add(p.project_id);
+          ok(`${label} valid`);
+        } else if (res.status === 403) warn(`${label} lacks project scope (403) — transcription may still work`);
+        else bad(`${label} rejected (HTTP ${res.status})`);
+      } catch (err) {
+        bad(`${label} request failed: ${err.message.split('\n')[0]}`);
+      }
+    }
+    log(`       transcription model: ${config.deepgramModel}`);
+    // Extra keys only add credit if they bill against separate projects; keys
+    // minted inside one project share a balance and buy nothing but failover.
+    if (dgKeys.length > 1) {
+      log(`       ${dgKeys.length} keys across ${projects.size} project(s) — failover enabled`);
+    }
+  }
+
+  log('\nCache');
+  const { stats: cacheStats } = await import('./cache.js');
+  const cs = cacheStats();
+  if (!Object.keys(cs).length) {
+    log('       no cache entries yet');
+  } else {
+    for (const [ns, { entries, bytes }] of Object.entries(cs)) {
+      const mb = (bytes / 1024 / 1024).toFixed(1);
+      log(`       ${ns.padEnd(12)} ${String(entries).padStart(4)} entries  ${mb} MB`);
     }
   }
 
@@ -305,6 +337,7 @@ async function queue(target, flags) {
   const q = await import('./queue.js');
   const sub = String(target || 'list');
 
+  // ── add ──────────────────────────────────────────────────────────────────
   if (sub === 'add') {
     const dir = flags.dir || flags.path;
     if (!dir) throw new Error('Usage: cfc queue add --dir <folder> [--tags a,b]');
@@ -312,21 +345,136 @@ async function queue(target, flags) {
     log(`\nadded ${res.added}, skipped ${res.skipped} already queued — ${res.total} total\n`);
     return;
   }
+
+  // ── reset ─────────────────────────────────────────────────────────────────
+  // Reset ALL failed items back to pending so they'll retry.
   if (sub === 'reset') {
     const items = q.list();
-    for (const i of items) if (i.status === 'failed') { i.status = 'pending'; i.attempts = 0; }
+    let n = 0;
+    for (const i of items) {
+      if (i.status === 'failed') { i.status = 'pending'; i.attempts = 0; delete i.lastError; n++; }
+    }
     q.save({ items });
-    log('\nfailed items reset to pending\n');
+    log(`\n${n} failed item(s) reset to pending\n`);
     return;
   }
 
-  const s = q.summary();
-  log(`\nqueue: ${s.pending} pending, ${s.posted} posted, ${s.failed} failed (${s.total} total)\n`);
-  for (const i of q.list()) {
-    const mark = i.status === 'posted' ? 'x' : i.status === 'failed' ? '!' : ' ';
-    log(`  [${mark}] ${i.title}${i.url ? `  ${i.url}` : ''}${i.lastError ? `  (${i.lastError.split('\n')[0].slice(0, 60)})` : ''}`);
+  // ── retry ─────────────────────────────────────────────────────────────────
+  // Re-queue a specific item by title substring or index (0-based).
+  // Also unsticks 'uploading' items that were interrupted mid-PUT.
+  //   cfc queue retry "Cookie"          match by title
+  //   cfc queue retry 3                 match by position in list
+  //   cfc queue retry --stuck           release all 'uploading' items
+  if (sub === 'retry') {
+    const items = q.list();
+    if (flags.stuck) {
+      const stuckItems = items.filter((i) => i.status === 'uploading');
+      if (!stuckItems.length) { log('\nno uploading items found\n'); return; }
+      for (const i of stuckItems) {
+        i.status = 'pending';
+        delete i.uploadStartedAt;
+        log(`  unstuck: ${i.title}`);
+      }
+      q.save({ items });
+      log(`\n${stuckItems.length} item(s) released back to pending — check YouTube Studio first to confirm they didn't actually upload\n`);
+      return;
+    }
+    const arg = String(flags._?.[0] || '').trim();
+    if (!arg) throw new Error('Usage: cfc queue retry <title-substring|index> [--stuck]');
+    const idx = /^\d+$/.test(arg) ? Number(arg) : -1;
+    const hit = idx >= 0 ? items[idx] : items.find((i) => i.title.toLowerCase().includes(arg.toLowerCase()));
+    if (!hit) throw new Error(`No queue item matches "${arg}". Run cfc queue to see the list.`);
+    const was = hit.status;
+    hit.status = 'pending';
+    hit.attempts = 0;
+    delete hit.lastError;
+    delete hit.uploadStartedAt;
+    q.save({ items });
+    log(`\nretrying: "${hit.title}"  (was: ${was})\n`);
+    return;
   }
+
+  // ── cancel ────────────────────────────────────────────────────────────────
+  // Remove a pending/failed item from the queue (does NOT delete the mp4 file).
+  //   cfc queue cancel "Cookie"
+  //   cfc queue cancel 3
+  //   cfc queue cancel --all-failed
+  if (sub === 'cancel') {
+    const items = q.list();
+    if (flags['all-failed']) {
+      const before = items.length;
+      const kept = items.filter((i) => i.status !== 'failed');
+      q.save({ items: kept });
+      log(`\nremoved ${before - kept.length} failed item(s) from queue\n`);
+      return;
+    }
+    const arg = String(flags._?.[0] || '').trim();
+    if (!arg) throw new Error('Usage: cfc queue cancel <title-substring|index> [--all-failed]');
+    const idx = /^\d+$/.test(arg) ? Number(arg) : -1;
+    const pos = idx >= 0 ? idx : items.findIndex((i) => i.title.toLowerCase().includes(arg.toLowerCase()));
+    if (pos === -1) throw new Error(`No queue item matches "${arg}".`);
+    const hit = items[pos];
+    if (hit.status === 'posted') throw new Error(`"${hit.title}" is already posted — cannot cancel.`);
+    items.splice(pos, 1);
+    q.save({ items });
+    log(`\ncancelled: "${hit.title}"  (file kept on disk)\n`);
+    return;
+  }
+
+  // ── move ──────────────────────────────────────────────────────────────────
+  // Change an item's priority so it posts sooner (higher number = sooner).
+  //   cfc queue move "Cookie" --priority 500
+  //   cfc queue move "Cookie" --top        (sets priority above everything else)
+  if (sub === 'move') {
+    const items = q.list();
+    const arg = String(flags._?.[0] || '').trim();
+    if (!arg) throw new Error('Usage: cfc queue move <title-substring|index> [--top] [--priority N]');
+    const idx = /^\d+$/.test(arg) ? Number(arg) : -1;
+    const hit = idx >= 0 ? items[idx] : items.find((i) => i.title.toLowerCase().includes(arg.toLowerCase()));
+    if (!hit) throw new Error(`No queue item matches "${arg}".`);
+    if (flags.top) {
+      const maxPri = Math.max(0, ...items.map((i) => Number(i.priority || 0)));
+      hit.priority = maxPri + 1000;
+    } else {
+      const p = Number(flags.priority);
+      if (!Number.isFinite(p)) throw new Error('--priority must be a number');
+      hit.priority = p;
+    }
+    q.save({ items });
+    log(`\n"${hit.title}" priority → ${hit.priority}\n`);
+    return;
+  }
+
+  // ── list (default) ────────────────────────────────────────────────────────
+  const s = q.summary();
+  const items = q.list();
+  log(`\nqueue: ${s.pending} pending, ${s.posted} posted, ${s.failed} failed${s.uploading ? `, ${s.uploading} uploading` : ''} (${s.total} total)\n`);
+  items.forEach((i, idx) => {
+    const mark = i.status === 'posted' ? 'x' : i.status === 'failed' ? '!' : i.status === 'uploading' ? '↑' : ' ';
+    const note = i.status === 'uploading'
+      ? `  ⚠ stuck uploading since ${i.uploadStartedAt ? new Date(i.uploadStartedAt).toLocaleTimeString() : '?'} — run: cfc queue retry --stuck`
+      : i.lastError ? `  (${i.lastError.split('\n')[0].slice(0, 60)})` : '';
+    log(`  ${String(idx).padStart(2)}  [${mark}] ${i.title}${i.url ? `  ${i.url}` : ''}${note}`);
+  });
   log('');
+}
+
+/**
+ * Turn a queue item's comma-separated tags into a hashtag line. #Shorts always
+ * leads (YouTube keys Shorts placement off it); the rest follow in tag order,
+ * deduped, capped at 5 so the description stays readable.
+ */
+function hashtags(tags) {
+  const seen = new Set(['shorts']);
+  const out = ['#Shorts'];
+  for (const raw of String(tags || '').split(',')) {
+    const tag = raw.trim().replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(`#${tag}`);
+    if (out.length >= 5) break;
+  }
+  return out.join(' ');
 }
 
 /** Upload exactly one queued clip. This is what the scheduler calls. */
@@ -352,13 +500,17 @@ async function postNext(flags) {
 
     const privacyStatus = flags.private ? 'private' : flags.unlisted ? 'unlisted' : 'public';
     log(`posting: ${item.title}  [${privacyStatus}]`);
+    q.markUploading(item.file);
     try {
       const res = await uploadVideo(
         item.file,
         {
           title: item.title,
-          description: `${item.title}\n\n#Shorts #lifesteal #minecraft`,
-          tags: (item.tags || 'lifesteal,lifestealsmp,minecraft,shorts').split(',').map((t) => t.trim()),
+          // Build hashtags from the item's own tags. Hardcoding #lifesteal put
+          // the wrong SMP on unstablesmp/branzy/parrot/spoke clips, and would
+          // put #minecraft on the crypto and AI batches in out/.
+          description: `${item.title}\n\n${hashtags(item.tags)}`,
+          tags: (item.tags || 'shorts').split(',').map((t) => t.trim()).filter(Boolean),
           privacyStatus,
         },
         { log }
@@ -367,11 +519,12 @@ async function postNext(flags) {
       q.markPosted(item.file, res);
       log(`posted ${res.shortUrl} [${res.privacyStatus}]`);
     } catch (err) {
-      q.markFailed(item.file, err.message);
+      const retryable = err.reason === 'uploadLimitExceeded' || err.reason === 'quotaExceeded';
+      q.markFailed(item.file, err.message, { retryable });
       log(`FAILED: ${err.message.split('\n')[0]}`);
       // Daily ceilings are expected, not errors worth a non-zero exit — the
       // next scheduled slot retries the same item.
-      if (err.reason !== 'uploadLimitExceeded' && err.reason !== 'quotaExceeded') process.exitCode = 1;
+      if (!retryable) process.exitCode = 1;
     }
   } finally {
     q.releaseLock();
@@ -479,6 +632,7 @@ async function agent(flags) {
     recentLimit: Number(flags.recent || 3),
     maxVideos: Number(flags['max-videos'] || 2),
     targetPending: flags['target-pending'] === undefined ? null : Number(flags['target-pending']),
+    queuePriority: Number(flags.priority || 0),
     post: Boolean(flags.post),
   });
 }
@@ -500,7 +654,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  if (['clip', 'app', 'publish', 'queue'].includes(cmd)) return fn(positional[0], flags);
+  if (['clip', 'app', 'publish'].includes(cmd)) return fn(positional[0], flags);
+  if (cmd === 'queue') return fn(positional[0], { ...flags, _: positional.slice(1) });
   if (cmd === 'agent') return fn(flags);
   return fn(flags);
 }

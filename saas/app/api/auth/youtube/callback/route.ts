@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const owned = await ownedYouTubeChannel(tokens.access_token);
     await saveConnectedChannel(state.tenantId, { ...owned, refreshTokenEncrypted: encryptSecret(tokens.refresh_token) });
     jar.delete('youtube_oauth_state');
-    return NextResponse.redirect(new URL('/dashboard?youtube=connected', baseUrl));
+    return NextResponse.redirect(new URL('/success?type=youtube', baseUrl));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'YouTube connection failed';
     return NextResponse.redirect(new URL(`/dashboard?youtube_error=${encodeURIComponent(message)}`, baseUrl));

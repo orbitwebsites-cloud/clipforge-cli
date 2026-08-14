@@ -46,10 +46,27 @@ export const paths = {
   out: path.join(ROOT, 'out'),
 };
 
+/** Collect every configured Deepgram key, de-duplicated, primary first. */
+function deepgramKeyPool() {
+  const keys = [
+    process.env.DEEPGRAM_API_KEY,
+    ...(process.env.DEEPGRAM_API_KEYS || '').split(','),
+    ...Object.keys(process.env)
+      .filter((k) => /^DEEPGRAM_API_KEY_\d+$/.test(k))
+      .sort((a, b) => Number(a.split('_').pop()) - Number(b.split('_').pop()))
+      .map((k) => process.env[k]),
+  ];
+  return [...new Set(keys.map((k) => (k || '').trim()).filter(Boolean))];
+}
+
 export const config = {
   groqKey: process.env.GROQ_API_KEY || '',
   cerebrasKey: process.env.CEREBRAS_API_KEY || '',
   deepgramKey: process.env.DEEPGRAM_API_KEY || '',
+  // Extra Deepgram keys, tried in order when the primary is rate-limited or its
+  // balance is exhausted. Accepts either DEEPGRAM_API_KEYS=a,b,c or numbered
+  // DEEPGRAM_API_KEY_2 / _3 / … so adding one never rewrites the existing line.
+  deepgramKeys: deepgramKeyPool(),
   groqBase: 'https://api.groq.com/openai/v1',
   cerebrasBase: 'https://api.cerebras.ai/v1',
   deepgramBase: 'https://api.deepgram.com/v1',

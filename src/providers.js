@@ -1,4 +1,21 @@
 import { config, CEREBRAS_PREFERENCE } from './config.js';
+import { Semaphore } from './pool.js';
+
+/**
+ * Global gate on ranking calls.
+ *
+ * Cerebras meters tokens per minute, so N videos ranking at once multiply token
+ * demand by N against a fixed ceiling. Measured with two concurrent videos: the
+ * map pass 429s repeatedly, burns the retry budget, and falls through to Groq —
+ * whose free tier is 8k TPM and smaller still, so the batch ends up ranked by
+ * the weaker lane precisely when throughput matters.
+ *
+ * Serialising here costs nothing in wall-clock: ranking is a small fraction of a
+ * video's runtime, and the download/transcribe/render stages still overlap
+ * freely across videos. It only stops them colliding on the one metered resource.
+ */
+const LLM_CONCURRENCY = Number(process.env.CFC_LLM_CONCURRENCY || 1);
+const llmGate = new Semaphore(LLM_CONCURRENCY);
 
 class HttpError extends Error {
   constructor(status, body, url) {
@@ -31,14 +48,16 @@ async function request(url, { key, method = 'GET', json, body, headers = {}, tim
 }
 
 /** Retry on 429 / 5xx with exponential backoff — both providers rate-limit aggressively. */
-async function withRetry(fn, { tries = 4, label = 'request' } = {}) {
+async function withRetry(fn, { tries = 4, label = 'request', retryable = () => true } = {}) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
       return await fn();
     } catch (err) {
       lastErr = err;
-      const retriable = err.status === 429 || (err.status >= 500 && err.status < 600) || err.name === 'AbortError';
+      const retriable =
+        (err.status === 429 || (err.status >= 500 && err.status < 600) || err.name === 'AbortError') &&
+        retryable(err);
       if (!retriable || i === tries - 1) break;
       const wait = Math.min(2 ** i * 1500, 20_000);
       process.stderr.write(`  ! ${label} failed (${err.status || err.name}), retrying in ${wait / 1000}s\n`);
@@ -78,10 +97,27 @@ export const groq = {
     ),
 };
 
+/**
+ * Index of the Deepgram key currently believed good.
+ *
+ * Sticky on purpose: once a key is exhausted it stays exhausted for the rest of
+ * the run, so restarting the search at zero on every clip would pay a guaranteed
+ * failed request per call for the whole batch.
+ */
+let dgKeyIndex = 0;
+
+/**
+ * Errors that mean "this key is done" rather than "try again in a moment".
+ * 401 invalid, 402 out of credit, 403 wrong scope — none improve with backoff,
+ * so they advance the pool instead of burning the retry budget.
+ */
+const KEY_FATAL = new Set([401, 402, 403]);
+
 export const deepgram = {
   get key() {
-    if (!config.deepgramKey) throw new Error('DEEPGRAM_API_KEY is not set — run `cfc doctor` or edit .env');
-    return config.deepgramKey;
+    const pool = config.deepgramKeys;
+    if (!pool.length) throw new Error('DEEPGRAM_API_KEY is not set — run `cfc doctor` or edit .env');
+    return pool[Math.min(dgKeyIndex, pool.length - 1)];
   },
 
   /**
@@ -93,33 +129,55 @@ export const deepgram = {
    * cross-chunk continuity get it ignored; `utterances` supplies the segment
    * boundaries that Whisper returned as `segments`.
    */
-  async transcribe(audio, { model = config.deepgramModel, language, contentType = 'audio/flac', timeout = 1_800_000 } = {}) {
+  async transcribe(audio, { model = config.deepgramModel, language, contentType = 'audio/flac', timeout = 1_800_000, log = () => {} } = {}) {
     const qs = new URLSearchParams({ model, smart_format: 'true', punctuate: 'true', utterances: 'true' });
     // `auto` is ClipForge's sentinel for detect-language; Deepgram spells it differently.
     if (!language || language === 'auto') qs.set('detect_language', 'true');
     else qs.set('language', language);
 
-    return withRetry(
-      async () => {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), timeout);
-        try {
-          const url = `${config.deepgramBase}/listen?${qs}`;
-          const res = await fetch(url, {
-            method: 'POST',
-            signal: ctrl.signal,
-            headers: { Authorization: `Token ${deepgram.key}`, 'Content-Type': contentType },
-            body: audio,
-          });
-          const text = await res.text();
-          if (!res.ok) throw new HttpError(res.status, text, url);
-          return JSON.parse(text);
-        } finally {
-          clearTimeout(timer);
-        }
-      },
-      { label: 'deepgram/transcribe' }
-    );
+    const post = (key) =>
+      withRetry(
+        async () => {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), timeout);
+          try {
+            const url = `${config.deepgramBase}/listen?${qs}`;
+            const res = await fetch(url, {
+              method: 'POST',
+              signal: ctrl.signal,
+              headers: { Authorization: `Token ${key}`, 'Content-Type': contentType },
+              body: audio,
+            });
+            const text = await res.text();
+            if (!res.ok) throw new HttpError(res.status, text, url);
+            return JSON.parse(text);
+          } finally {
+            clearTimeout(timer);
+          }
+        },
+        // A key-fatal status must not be retried against the same key — it will
+        // fail identically four times and delay the failover by ~30 s.
+        { label: 'deepgram/transcribe', retryable: (err) => !KEY_FATAL.has(err.status) }
+      );
+
+    const pool = config.deepgramKeys;
+    if (!pool.length) throw new Error('DEEPGRAM_API_KEY is not set — run `cfc doctor` or edit .env');
+
+    let lastErr;
+    // Start at the last-known-good key and try each remaining one once.
+    for (let i = dgKeyIndex; i < pool.length; i++) {
+      try {
+        const out = await post(pool[i]);
+        dgKeyIndex = i;
+        return out;
+      } catch (err) {
+        lastErr = err;
+        const exhausted = KEY_FATAL.has(err.status) || err.status === 429;
+        if (!exhausted || i === pool.length - 1) break;
+        log(`  deepgram key ${i + 1}/${pool.length} unusable (${err.status}) — switching to key ${i + 2}`);
+      }
+    }
+    throw lastErr;
   },
 };
 
@@ -193,6 +251,10 @@ export const cerebras = {
  * itself, not as a second identical failure against a different vendor.
  */
 export async function chatWithFailover(payload, { log = () => {} } = {}) {
+  return llmGate.run(() => chatOnce(payload, { log }));
+}
+
+async function chatOnce(payload, { log }) {
   const model = await resolveCerebrasModel();
   try {
     return await cerebras.chat({ ...payload, model });
