@@ -15,6 +15,8 @@ test('Linux worker uses python3 and refuses to lease jobs without yt-dlp', () =>
   assert.match(download, /process\.platform === 'win32' \? 'python' : 'python3'/);
   assert.match(download, /--js-runtimes/);
   assert.match(download, /youtubepot-bgutilscript:server_home/);
+  assert.match(download, /youtube:player-client=mweb/);
+  assert.match(download, /vcodec!=none.*acodec!=none/);
   assert.match(discover, /process\.platform === 'win32' \? 'python' : 'python3'/);
   assert.match(worker, /await ytdlpVersion\(\)/);
   assert.match(worker, /Worker startup failed: yt-dlp is unavailable/);

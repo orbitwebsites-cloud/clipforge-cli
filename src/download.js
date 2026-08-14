@@ -8,6 +8,7 @@ const YTDLP_RUNTIME_ARGS = ['--js-runtimes', `node:${process.execPath}`];
 const potServerHome = process.env.CFC_YTDLP_POT_SERVER_HOME;
 if (potServerHome) {
   YTDLP_RUNTIME_ARGS.push('--extractor-args', `youtubepot-bgutilscript:server_home=${potServerHome}`);
+  YTDLP_RUNTIME_ARGS.push('--extractor-args', 'youtube:player-client=mweb');
 }
 
 export async function ytdlpVersion() {
@@ -28,6 +29,9 @@ export const isUrl = (s) => /^https?:\/\//i.test(s);
  */
 export async function download(url, workDir, { log = () => {}, maxHeight = 1080 } = {}) {
   const dir = ensureDir(path.join(workDir, 'download'));
+  const format = potServerHome
+    ? `b[height<=${maxHeight}][vcodec!=none][acodec!=none]/b[vcodec!=none][acodec!=none]`
+    : `bv*[height<=${maxHeight}]+ba/b[height<=${maxHeight}]/bv*+ba/b`;
 
   const { out: titleOut } = await run(PY, ['-m', 'yt_dlp', ...YTDLP_RUNTIME_ARGS, '--no-playlist', '--print', '%(title)s', '--skip-download', url]);
   const title = titleOut.trim().split('\n').pop() || 'video';
@@ -39,7 +43,7 @@ export async function download(url, workDir, { log = () => {}, maxHeight = 1080 
       '-m', 'yt_dlp', ...YTDLP_RUNTIME_ARGS,
       '--no-playlist',
       '--no-progress',
-      '-f', `bv*[height<=${maxHeight}]+ba/b[height<=${maxHeight}]/bv*+ba/b`,
+      '-f', format,
       '--merge-output-format', 'mp4',
       // yt-dlp needs ffmpeg to mux separate video/audio streams; reuse the
       // copy ClipForge already ships instead of requiring one on PATH.
