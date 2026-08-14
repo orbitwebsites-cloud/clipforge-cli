@@ -281,6 +281,32 @@ export default function Dashboard({
     setNotice('Short published to YouTube.');
   }
 
+  async function cancelJob(jobId: string) {
+    const response = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    if (!response.ok) return;
+    setData((d) => ({
+      ...d,
+      jobs: d.jobs.map((j) =>
+        j.id === jobId
+          ? { ...j, status: 'failed' as const, error: 'Cancelled by user', completedAt: new Date().toISOString() }
+          : j,
+      ),
+    }));
+  }
+
+  async function retryJob(jobId: string) {
+    const response = await fetch(`/api/jobs/${jobId}`, { method: 'POST' });
+    if (!response.ok) return;
+    setData((d) => ({
+      ...d,
+      jobs: d.jobs.map((j) =>
+        j.id === jobId
+          ? { ...j, status: 'queued' as const, progress: 0, error: null, completedAt: null }
+          : j,
+      ),
+    }));
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -510,6 +536,8 @@ export default function Dashboard({
                 targetMinutes={data.sla.targetMinutes}
                 liveSyncState={liveSyncState}
                 lastSyncedAt={lastSyncedAt}
+                onCancelJob={cancelJob}
+                onRetryJob={retryJob}
               />
             )}
             {activeTab === 'clips' && (
@@ -545,18 +573,28 @@ function ActiveJob({
   job,
   remainingLabel,
   targetMinutes,
+  onCancel,
 }: {
   job: Job;
   remainingLabel: string;
   targetMinutes: number;
+  onCancel: (id: string) => void;
 }) {
   return (
     <article className="active-job">
       <div className="active-top">
         <div>
-          <span className="status-badge">
-            <LoaderCircle className="spin" /> Processing now
-          </span>
+          <div className="active-job-header">
+            <span className="status-badge">
+              <LoaderCircle className="spin" /> Processing now
+            </span>
+            <button
+              className="job-action-btn job-action-cancel"
+              onClick={() => onCancel(job.id)}
+            >
+              <X size={11} /> Cancel
+            </button>
+          </div>
           <h2>{job.sourceTitle}</h2>
           <p>
             Detected {relative(job.detectedAt)} · {statusLabels[job.status]}
@@ -601,6 +639,8 @@ function JobsPanel({
   targetMinutes,
   liveSyncState,
   lastSyncedAt,
+  onCancelJob,
+  onRetryJob,
 }: {
   jobs: Job[];
   active?: Job;
@@ -608,6 +648,8 @@ function JobsPanel({
   targetMinutes: number;
   liveSyncState: LiveSyncState;
   lastSyncedAt: number;
+  onCancelJob: (id: string) => void;
+  onRetryJob: (id: string) => void;
 }) {
   return (
     <section className="tab-panel jobs-tab">
@@ -637,6 +679,7 @@ function JobsPanel({
           job={active}
           remainingLabel={remainingLabel}
           targetMinutes={targetMinutes}
+          onCancel={onCancelJob}
         />
       )}
       <div className="job-history">
@@ -659,6 +702,23 @@ function JobsPanel({
                       : job.error}
                   </p>
                 )}
+                {job.status === 'failed' && (
+                  <button
+                    className="job-action-btn"
+                    onClick={() => onRetryJob(job.id)}
+                  >
+                    <RefreshCw size={11} /> Retry job
+                  </button>
+                )}
+                {!['complete', 'failed'].includes(job.status) &&
+                  job.id !== active?.id && (
+                    <button
+                      className="job-action-btn job-action-cancel"
+                      onClick={() => onCancelJob(job.id)}
+                    >
+                      <X size={11} /> Cancel
+                    </button>
+                  )}
               </div>
               <div className="job-progress">
                 <span>
@@ -1038,7 +1098,7 @@ function SourcesPanel({
           {notice && <p className="form-notice">{notice}</p>}
         </aside>
       </div>
-      <section className="past-library">
+      <section className="past-library" aria-busy={libraryLoading}>
         <div className="past-library-head">
           <div>
             <span className="feature-icon purple">
@@ -1101,6 +1161,12 @@ function SourcesPanel({
           </button>
         </div>
         {libraryNotice && <p className="library-notice">{libraryNotice}</p>}
+        {libraryLoading && !pastVideos.length && (
+          <div className="library-skeleton" role="status" aria-label="Loading past videos">
+            <div><span className="spinner-ring" /><b>Loading creator libraries…</b><small>Fetching recent uploads and removing anything already queued.</small></div>
+            <section>{Array.from({ length: 6 }, (_, index) => <article className="shimmer" key={index}><i /><span><b /><small /><small /></span></article>)}</section>
+          </div>
+        )}
         {pastVideos.length > 0 && (
           <>
             <div className="library-select-row">
@@ -1741,12 +1807,10 @@ function AnalyticsPanel({ destinationId }: { destinationId: string }) {
       </div>
 
       {loading && !analytics ? (
-        <div className="analytics-loading">
-          <LoaderCircle className="spin" />
-          <b>Syncing YouTube Analytics…</b>
-          <p>
-            Views, watch time, engagement, and subscriber growth are loading.
-          </p>
+        <div className="analytics-skeleton" role="status" aria-label="Syncing YouTube Analytics">
+          <div className="analytics-skeleton-head"><span className="spinner-ring" /><div><b>Syncing YouTube Analytics…</b><p>Views, watch time, engagement, and subscriber growth are loading.</p></div></div>
+          <div className="analytics-skeleton-kpis">{Array.from({ length: 4 }, (_, index) => <i className="shimmer" key={index} />)}</div>
+          <div className="analytics-skeleton-chart shimmer"><i /></div>
         </div>
       ) : error ? (
         <div className="analytics-error">

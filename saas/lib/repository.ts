@@ -126,6 +126,30 @@ export async function removeSourceChannel(tenantId: string, sourceId: string) {
   if (!result.rowCount) throw new Error('Source channel not found');
 }
 
+export async function cancelJob(tenantId: string, jobId: string) {
+  if (!databaseEnabled()) {
+    const job = demoStore().jobs.find((j) => j.id === jobId && j.tenantId === tenantId);
+    if (!job) throw new Error('Job not found');
+    if (['complete', 'failed'].includes(job.status)) throw new Error('Job already finished');
+    Object.assign(job, { status: 'failed', error: 'Cancelled by user', completedAt: new Date().toISOString(), leaseOwner: null, leaseExpiresAt: null });
+    return;
+  }
+  const result = await query(`update jobs set status='failed',error='Cancelled by user',completed_at=now(),lease_owner=null,lease_expires_at=null where id=$1 and tenant_id=$2 and status not in ('complete','failed') returning id`, [jobId, tenantId]);
+  if (!result.rowCount) throw new Error('Job not found or already finished');
+}
+
+export async function requeueJob(tenantId: string, jobId: string) {
+  if (!databaseEnabled()) {
+    const job = demoStore().jobs.find((j) => j.id === jobId && j.tenantId === tenantId);
+    if (!job) throw new Error('Job not found');
+    if (job.status !== 'failed') throw new Error('Only failed jobs can be retried');
+    Object.assign(job, { status: 'queued', progress: 0, error: null, completedAt: null, leaseOwner: null, leaseExpiresAt: null });
+    return;
+  }
+  const result = await query(`update jobs set status='queued',progress=0,error=null,completed_at=null,lease_owner=null,lease_expires_at=null where id=$1 and tenant_id=$2 and status='failed' returning id`, [jobId, tenantId]);
+  if (!result.rowCount) throw new Error('Job not found or not in a retryable state');
+}
+
 export async function updateCreatorPreferences(tenantId: string, preferences: CreatorPreferences) {
   if (!databaseEnabled()) return preferences;
   const result = await query<{ creator_preferences: CreatorPreferences }>('update tenants set creator_preferences=$2 where id=$1 returning creator_preferences', [tenantId, preferences]);
