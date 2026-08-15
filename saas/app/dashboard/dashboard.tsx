@@ -58,6 +58,28 @@ const statusLabels: Record<JobStatus, string> = {
   complete: 'Published',
   failed: 'Needs attention',
 };
+
+/**
+ * Raw job errors are worker stack traces / yt-dlp stderr — useful to us,
+ * meaningless (or alarming) to customers. Map known patterns to a stable
+ * opaque code; the real message stays in the DB for support to inspect.
+ */
+const ERROR_CODE_PATTERNS: [RegExp, number][] = [
+  [/spawn python enoent/i, 301],
+  [/firefox cookies database|cookies-from-browser|sign in to confirm you.?re not a bot/i, 302],
+  [/cancelled by user/i, 0],
+  [/yt-?dlp|unable to download|video unavailable|private video/i, 303],
+  [/deepgram|transcri/i, 304],
+  [/cerebras|groq|gemini|mistral|nvidia|llm|rank/i, 305],
+  [/ffmpeg|ffprobe|render/i, 306],
+  [/youtube.*upload|quota|oauth|access.?token|refresh.?token/i, 307],
+];
+function jobErrorCode(raw: string): number {
+  for (const [pattern, code] of ERROR_CODE_PATTERNS) {
+    if (pattern.test(raw)) return code;
+  }
+  return 300;
+}
 const stageOrder: JobStatus[] = [
   'downloading',
   'transcribing',
@@ -739,10 +761,10 @@ function JobsPanel({
                   {relative(job.detectedAt)}
                 </p>
                 {job.status === 'failed' && job.error && (
-                  <p className="job-error" title={job.error}>
-                    {job.error === 'spawn python ENOENT'
-                      ? 'The media worker was unavailable. This job is safe to retry.'
-                      : job.error}
+                  <p className="job-error">
+                    {job.error === 'Cancelled by user'
+                      ? 'Cancelled by user'
+                      : `Something went wrong (error ${jobErrorCode(job.error)}). Safe to retry — contact support if it keeps happening.`}
                   </p>
                 )}
                 {job.status === 'failed' && (

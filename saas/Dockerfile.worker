@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 
     cd /opt/bgutil-ytdlp-pot-provider/server && npm ci && npx tsc && rm -rf /opt/bgutil-ytdlp-pot-provider/.git && \
     python3 -m yt_dlp --version && ffmpeg -version >/dev/null && \
     rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production CFC_PYTHON=/usr/bin/python3 CFC_YTDLP_POT_SERVER_HOME=/opt/bgutil-ytdlp-pot-provider/server CFC_FFMPEG=/usr/bin/ffmpeg CFC_FFPROBE=/usr/bin/ffprobe
+ENV NODE_ENV=production CFC_PYTHON=/usr/bin/python3 CFC_YTDLP_POT_SERVER_HOME=/opt/bgutil-ytdlp-pot-provider/server CFC_YTDLP_COOKIES=none CFC_FFMPEG=/usr/bin/ffmpeg CFC_FFPROBE=/usr/bin/ffprobe
 WORKDIR /app
 COPY package.json ./
 COPY src ./src

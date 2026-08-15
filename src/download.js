@@ -23,8 +23,15 @@ if (potServerHome) {
  * Chrome and Edge on Windows encrypt their cookie store with app-bound DPAPI,
  * which yt-dlp cannot read (yt-dlp#10927).
  */
-const cookieBrowser = (process.env.CFC_YTDLP_COOKIES || 'firefox').trim();
-if (cookieBrowser && cookieBrowser !== 'none') {
+const cookiesFile = process.env.CFC_YTDLP_COOKIES_FILE;
+// A configured POT server already gets past the bot check without cookies, so
+// only fall back to the (desktop-only) browser-cookie default when neither a
+// cookies file nor a POT server is set — headless hosts have no browser profile
+// to read and crash instead of downloading ("could not find firefox cookies database").
+const cookieBrowser = (process.env.CFC_YTDLP_COOKIES || (potServerHome ? 'none' : 'firefox')).trim();
+if (cookiesFile) {
+  YTDLP_RUNTIME_ARGS.push('--cookies', cookiesFile);
+} else if (cookieBrowser && cookieBrowser !== 'none') {
   YTDLP_RUNTIME_ARGS.push('--cookies-from-browser', cookieBrowser);
 }
 
