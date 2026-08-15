@@ -11,6 +11,9 @@ const schema = z.object({
   brandColor: z.string().regex(/^#[0-9a-f]{6}$/i),
   hashtags: z.string().trim().max(160),
   learningEnabled: z.boolean(),
+  autoDeleteEnabled: z.boolean(),
+  autoDeleteMinViews: z.number().int().min(1).max(100000),
+  autoDeleteAfterDays: z.number().int().min(1).max(90),
 }).refine((value) => value.maxClipSeconds > value.minClipSeconds, { message: 'Maximum clip length must be greater than the minimum.' });
 
 export async function PUT(request: Request) {

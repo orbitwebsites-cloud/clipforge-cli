@@ -6,7 +6,7 @@ const globalStore = globalThis as typeof globalThis & { __clipforgeStore?: DemoS
 
 export const DEMO_TENANT_ID = 'tenant_demo';
 
-export const defaultCreatorPreferences: CreatorPreferences = { publishMode: 'automatic', clipsPerVideo: 3, minClipSeconds: 15, maxClipSeconds: 32, captionStyle: 'impact', brandColor: '#C8FF38', hashtags: '#Shorts #Minecraft', learningEnabled: true };
+export const defaultCreatorPreferences: CreatorPreferences = { publishMode: 'automatic', clipsPerVideo: 3, minClipSeconds: 15, maxClipSeconds: 32, captionStyle: 'impact', brandColor: '#C8FF38', hashtags: '#Shorts #Minecraft', learningEnabled: true, autoDeleteEnabled: false, autoDeleteMinViews: 100, autoDeleteAfterDays: 7 };
 
 export function demoStore(): DemoStore {
   if (!globalStore.__clipforgeStore) {

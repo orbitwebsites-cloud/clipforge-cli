@@ -1728,6 +1728,51 @@ function SettingsPanel({
             </small>
           </span>
         </label>
+        <label className="learning-toggle">
+          <input
+            type="checkbox"
+            checked={preferences.autoDeleteEnabled}
+            onChange={(event) =>
+              update('autoDeleteEnabled', event.target.checked)
+            }
+          />
+          <span>
+            <Trash2 />
+            <b>Auto-delete underperforming clips</b>
+            <small>
+              Delete ClipForge-uploaded Shorts that fall below your view
+              threshold after a set number of days.
+            </small>
+          </span>
+        </label>
+        {preferences.autoDeleteEnabled && (
+          <div className="field-row auto-delete-row">
+            <label>
+              Min views threshold
+              <input
+                type="number"
+                min={1}
+                max={100000}
+                value={preferences.autoDeleteMinViews}
+                onChange={(event) =>
+                  update('autoDeleteMinViews', Number(event.target.value))
+                }
+              />
+            </label>
+            <label>
+              Days before checking
+              <input
+                type="number"
+                min={1}
+                max={90}
+                value={preferences.autoDeleteAfterDays}
+                onChange={(event) =>
+                  update('autoDeleteAfterDays', Number(event.target.value))
+                }
+              />
+            </label>
+          </div>
+        )}
         <div className="control-actions">
           {notice && <p className="form-notice">{notice}</p>}
           <button className="button button-dark" disabled={saving}>

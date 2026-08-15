@@ -58,6 +58,9 @@ export type CreatorPreferences = {
   brandColor: string;
   hashtags: string;
   learningEnabled: boolean;
+  autoDeleteEnabled: boolean;
+  autoDeleteMinViews: number;
+  autoDeleteAfterDays: number;
 };
 
 export type PastVideo = {
