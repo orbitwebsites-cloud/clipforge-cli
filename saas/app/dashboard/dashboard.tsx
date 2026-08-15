@@ -930,6 +930,33 @@ function SourcesPanel({
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryNotice, setLibraryNotice] = useState('');
   const [confirmingQueue, setConfirmingQueue] = useState(false);
+  const [clipUrl, setClipUrl] = useState('');
+  const [clipRightsConfirmed, setClipRightsConfirmed] = useState(false);
+  const [clipSaving, setClipSaving] = useState(false);
+  const [clipNotice, setClipNotice] = useState('');
+
+  async function clipVideoUrl(event: React.FormEvent) {
+    event.preventDefault();
+    setClipSaving(true);
+    setClipNotice('');
+    const response = await fetch('/api/videos/clip-url', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: clipUrl, rightsConfirmed: clipRightsConfirmed }),
+    });
+    const body = await response.json();
+    setClipSaving(false);
+    setClipNotice(
+      response.ok
+        ? 'Queued. It will show up in your job queue shortly.'
+        : body.error || 'Could not queue that video.',
+    );
+    if (body.dashboard) {
+      onDashboard(body.dashboard);
+      setClipUrl('');
+      setClipRightsConfirmed(false);
+    }
+  }
 
   useEffect(() => {
     const connectedIds = new Set(
@@ -1178,6 +1205,42 @@ function SourcesPanel({
             </label>
           </form>
           {notice && <p className="form-notice">{notice}</p>}
+        </aside>
+        <aside className="source-connect-card">
+          <span className="feature-icon">
+            <Link2 />
+          </span>
+          <h3>Clip a single video</h3>
+          <p>
+            Paste any YouTube video URL to queue it for clipping — no need
+            to connect it as a monitored source first.
+          </p>
+          <form className="channel-form" onSubmit={clipVideoUrl}>
+            <label htmlFor="clip-video-url">
+              <Link2 /> Video URL
+            </label>
+            <div>
+              <input
+                id="clip-video-url"
+                value={clipUrl}
+                onChange={(event) => setClipUrl(event.target.value)}
+                placeholder="youtube.com/watch?v=..."
+                required
+              />
+              <button aria-label="Clip this video" disabled={clipSaving || !clipRightsConfirmed}>
+                {clipSaving ? <LoaderCircle className="spin" /> : <ArrowRight />}
+              </button>
+            </div>
+            <label className="rights-check">
+              <input
+                type="checkbox"
+                checked={clipRightsConfirmed}
+                onChange={(event) => setClipRightsConfirmed(event.target.checked)}
+              />
+              <ShieldCheck /> I own or have permission to repurpose this video.
+            </label>
+          </form>
+          {clipNotice && <p className="form-notice">{clipNotice}</p>}
         </aside>
       </div>
       <section className="past-library" aria-busy={libraryLoading}>

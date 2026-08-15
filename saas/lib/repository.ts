@@ -194,7 +194,7 @@ export async function existingJobVideoIds(tenantId: string) {
 }
 
 export async function enqueueVideo(
-  source: StoredSourceChannel,
+  source: Pick<StoredSourceChannel, 'tenantId' | 'destinationChannelId'>,
   video: { id: string; title: string; publishedAt?: string; url?: string },
   origin: 'live' | 'backfill' = 'live',
 ) {
@@ -243,6 +243,12 @@ export async function updateJob(jobId: string, workerId: string, status: JobStat
   const result = await query<any>(`update jobs set status=$3,progress=$4,error=$5,lease_expires_at=now()+interval '10 minutes',completed_at=case when $3 in ('complete','failed') then now() else completed_at end where id=$1 and lease_owner=$2 returning *`, [jobId, workerId, status, progress, error]);
   if (!result.rows[0]) throw new Error('Job lease not found');
   return mapJob(result.rows[0]);
+}
+
+export async function destinationChannelForTenant(tenantId: string) {
+  if (!databaseEnabled()) return demoStore().channels.find((c) => c.tenantId === tenantId && c.connected)?.id || null;
+  const result = await query<{ id: string }>('select id from channels where tenant_id=$1 and connected=true order by created_at desc limit 1', [tenantId]);
+  return result.rows[0]?.id || null;
 }
 
 export async function channelRefreshToken(channelId: string) {
