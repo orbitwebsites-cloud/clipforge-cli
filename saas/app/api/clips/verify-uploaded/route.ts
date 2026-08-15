@@ -1,6 +1,8 @@
 import { getDashboard } from '@/lib/repository';
 import { query } from '@/lib/db';
 import { tenantIdFromSession } from '@/lib/session';
+import { refreshGoogleAccessToken } from '@/lib/youtube';
+import { decryptSecret } from '@/lib/crypto';
 
 const YT_VIDEOS = 'https://www.googleapis.com/youtube/v3/videos';
 
@@ -51,15 +53,21 @@ export async function GET() {
       });
     }
 
-    // Get access token for YouTube API verification
+    // Get access token for YouTube API verification (refresh_token is encrypted at rest)
     const channelId = tracked[0].channel_id;
-    const { rows: channelRows } = await query<{ access_token: string }>(
-      `SELECT access_token FROM channels WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+    const { rows: channelRows } = await query<{ refresh_token_encrypted: string }>(
+      `SELECT refresh_token_encrypted FROM channels WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
       [channelId, tenantId],
     );
-    const accessToken = channelRows[0]?.access_token;
-    if (!accessToken) {
+    const encrypted = channelRows[0]?.refresh_token_encrypted;
+    if (!encrypted) {
       return Response.json({ ok: false, error: 'No connected YouTube channel — cannot verify.' }, { status: 400 });
+    }
+    let accessToken: string;
+    try {
+      accessToken = await refreshGoogleAccessToken(decryptSecret(encrypted));
+    } catch {
+      return Response.json({ ok: false, error: 'YouTube auth for this channel has expired or was revoked.' }, { status: 400 });
     }
 
     // Batch verify in chunks of 50 (YouTube API limit)
@@ -67,8 +75,8 @@ export async function GET() {
     const confirmedIds = new Set<string>();
     for (let i = 0; i < tracked.length; i += CHUNK) {
       const chunk = tracked.slice(i, i + CHUNK).map((r) => r.youtube_video_id);
-      const url = `${YT_VIDEOS}?part=id&id=${chunk.join(',')}&access_token=${encodeURIComponent(accessToken)}`;
-      const res = await fetch(url);
+      const url = `${YT_VIDEOS}?part=id&id=${chunk.join(',')}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const body = await res.json() as { items?: { id: string }[] };
       for (const item of body.items ?? []) confirmedIds.add(item.id);
     }

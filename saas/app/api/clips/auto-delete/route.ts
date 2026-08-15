@@ -1,12 +1,14 @@
 import { getDashboard } from '@/lib/repository';
 import { query } from '@/lib/db';
 import { tenantIdFromSession } from '@/lib/session';
+import { refreshGoogleAccessToken } from '@/lib/youtube';
+import { decryptSecret } from '@/lib/crypto';
 
 const YT_VIDEOS = 'https://www.googleapis.com/youtube/v3/videos';
 
 async function fetchViewCounts(videoIds: string[], accessToken: string): Promise<Map<string, number>> {
-  const url = `${YT_VIDEOS}?part=statistics&id=${videoIds.join(',')}&access_token=${encodeURIComponent(accessToken)}`;
-  const res = await fetch(url);
+  const url = `${YT_VIDEOS}?part=statistics&id=${videoIds.join(',')}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const body = await res.json() as { items?: { id: string; statistics?: { viewCount?: string } }[] };
   const map = new Map<string, number>();
   for (const item of body.items ?? []) {
@@ -54,15 +56,22 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, deleted: 0, message: 'No eligible clips found.' });
     }
 
-    // Fetch per-channel access tokens
+    // Fetch per-channel access tokens (refresh_token is encrypted at rest; exchange it for a live access token)
     const channelIds = [...new Set(candidates.map((r) => r.channel_id))];
     const tokenMap = new Map<string, string>();
     for (const channelId of channelIds) {
-      const { rows } = await query<{ access_token: string }>(
-        `SELECT access_token FROM channels WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      const { rows } = await query<{ refresh_token_encrypted: string }>(
+        `SELECT refresh_token_encrypted FROM channels WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
         [channelId, tenantId],
       );
-      if (rows[0]?.access_token) tokenMap.set(channelId, rows[0].access_token);
+      const encrypted = rows[0]?.refresh_token_encrypted;
+      if (!encrypted) continue;
+      try {
+        const accessToken = await refreshGoogleAccessToken(decryptSecret(encrypted));
+        tokenMap.set(channelId, accessToken);
+      } catch {
+        // Channel's Google auth is broken/revoked — skip it rather than fail the whole batch
+      }
     }
 
     const anyToken = [...tokenMap.values()][0];
