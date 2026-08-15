@@ -1822,7 +1822,16 @@ function AutoDeleteControls({
       });
       const body = await res.json();
       if (body.ok) {
-        setResult(body.deleted === 0 ? body.message ?? 'No clips met the delete threshold.' : `Deleted ${body.deleted} clip${body.deleted === 1 ? '' : 's'}.`);
+        if (body.message) {
+          setResult(body.message);
+        } else if (body.deleted > 0) {
+          setResult(`Deleted ${body.deleted} clip${body.deleted === 1 ? '' : 's'} (checked ${body.checked}, threshold ${body.minViews} views / ${body.hours}h).`);
+        } else {
+          const detail = (body.views ?? [])
+            .map((v: { youtubeVideoId: string; views: number | null }) => `${v.youtubeVideoId}=${v.views ?? '?'}v`)
+            .join(', ');
+          setResult(`Checked ${body.checked} clip${body.checked === 1 ? '' : 's'} — none under ${body.minViews} views. (${detail})`);
+        }
       } else {
         setResult(body.error ?? 'Run failed.');
       }

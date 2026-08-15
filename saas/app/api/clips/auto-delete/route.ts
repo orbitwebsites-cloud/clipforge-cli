@@ -97,7 +97,16 @@ export async function POST(request: Request) {
       }
     }
 
-    return Response.json({ ok: true, deleted: deleted.length, deletedIds: deleted, errors });
+    return Response.json({
+      ok: true,
+      deleted: deleted.length,
+      deletedIds: deleted,
+      errors,
+      checked: candidates.length,
+      minViews,
+      hours,
+      views: candidates.map((r) => ({ youtubeVideoId: r.youtube_video_id, views: viewCounts.get(r.youtube_video_id) ?? null })),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Auto-delete failed';
     return Response.json({ ok: false, error: message }, { status: 500 });
