@@ -89,6 +89,7 @@ export type Job = {
   error: string | null;
   leaseOwner?: string | null;
   leaseExpiresAt?: string | null;
+  priority: number;
   clips: Clip[];
 };
 

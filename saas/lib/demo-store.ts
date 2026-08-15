@@ -41,10 +41,10 @@ export function demoAddSourceChannel(tenantId: string, data: Omit<StoredSourceCh
   return source;
 }
 
-export function demoEnqueue(input: Omit<Job, 'id' | 'clips' | 'progress' | 'status' | 'startedAt' | 'completedAt' | 'error'>) {
+export function demoEnqueue(input: Omit<Job, 'id' | 'clips' | 'progress' | 'status' | 'startedAt' | 'completedAt' | 'error' | 'priority'>) {
   const duplicate = demoStore().jobs.find((job) => job.tenantId === input.tenantId && job.sourceVideoId === input.sourceVideoId);
   if (duplicate) return duplicate;
-  const job: Job = { ...input, id: randomUUID(), clips: [], progress: 0, status: 'queued', startedAt: null, completedAt: null, error: null };
+  const job: Job = { ...input, id: randomUUID(), clips: [], progress: 0, status: 'queued', startedAt: null, completedAt: null, error: null, priority: 0 };
   demoStore().jobs.push(job);
   return job;
 }

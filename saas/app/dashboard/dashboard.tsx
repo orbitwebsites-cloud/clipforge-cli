@@ -308,6 +308,22 @@ export default function Dashboard({
     }));
   }
 
+  async function setPriority(jobId: string, priority: number) {
+    const response = await fetch(`/api/jobs/${jobId}/priority`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ priority }),
+    });
+    if (!response.ok) return;
+    // Re-sort queue optimistically: boosted jobs bubble to top
+    setData((d) => {
+      const updated = d.jobs.map((j) => j.id === jobId ? { ...j, priority } : j);
+      const queued = updated.filter((j) => j.status === 'queued').sort((a, b) => (b.priority - a.priority) || a.deadlineAt.localeCompare(b.deadlineAt));
+      const rest = updated.filter((j) => j.status !== 'queued');
+      return { ...d, jobs: [...queued, ...rest] };
+    });
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -540,6 +556,7 @@ export default function Dashboard({
                 lastSyncedAt={lastSyncedAt}
                 onCancelJob={cancelJob}
                 onRetryJob={retryJob}
+                onSetPriority={setPriority}
               />
             )}
             {activeTab === 'clips' && (
@@ -665,6 +682,7 @@ function JobsPanel({
   lastSyncedAt,
   onCancelJob,
   onRetryJob,
+  onSetPriority,
 }: {
   jobs: Job[];
   active?: Job;
@@ -674,6 +692,7 @@ function JobsPanel({
   lastSyncedAt: number;
   onCancelJob: (id: string) => void;
   onRetryJob: (id: string) => void;
+  onSetPriority: (id: string, priority: number) => void;
 }) {
   return (
     <section className="tab-panel jobs-tab">
@@ -734,7 +753,24 @@ function JobsPanel({
                     <RefreshCw size={11} /> Retry job
                   </button>
                 )}
-                {!['complete', 'failed'].includes(job.status) &&
+                {job.status === 'queued' && job.id !== active?.id && (
+                  <span className="job-actions-row">
+                    <button
+                      className={`job-action-btn${job.priority > 0 ? ' job-action-boosted' : ''}`}
+                      title={job.priority > 0 ? 'Boosted — click to reset' : 'Move to front of queue'}
+                      onClick={() => onSetPriority(job.id, job.priority > 0 ? 0 : 10)}
+                    >
+                      <Rocket size={11} /> {job.priority > 0 ? 'Boosted' : 'Boost'}
+                    </button>
+                    <button
+                      className="job-action-btn job-action-cancel"
+                      onClick={() => onCancelJob(job.id)}
+                    >
+                      <X size={11} /> Cancel
+                    </button>
+                  </span>
+                )}
+                {!['queued', 'complete', 'failed'].includes(job.status) &&
                   job.id !== active?.id && (
                     <button
                       className="job-action-btn job-action-cancel"

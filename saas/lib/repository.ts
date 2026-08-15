@@ -69,7 +69,7 @@ const publicChannel = ({ webhookSecret: _webhookSecret, refreshTokenEncrypted: _
 const mapSourceChannel = (row: any): StoredSourceChannel => ({ id: row.id, tenantId: row.tenant_id, youtubeChannelId: row.youtube_channel_id, platform: row.platform || 'youtube', platformUserId: row.platform_user_id || row.youtube_channel_id, platformLogin: row.platform_login || null, title: row.title, handle: row.handle, url: row.url, connected: row.connected, rightsConfirmed: Boolean(row.rights_confirmed), webhookSecret: row.webhook_secret, destinationChannelId: row.destination_channel_id, createdAt: row.created_at.toISOString?.() || row.created_at });
 const publicSourceChannel = ({ webhookSecret: _webhookSecret, destinationChannelId: _destination, ...channel }: StoredSourceChannel) => channel;
 const mapClip = (row: any) => ({ id: row.id, jobId: row.job_id, title: row.title, durationSeconds: Number(row.duration_seconds), youtubeVideoId: row.youtube_video_id, youtubeUrl: row.youtube_url, status: row.status, privacyStatus: row.privacy_status || (row.status === 'review' ? 'private' : row.youtube_video_id ? 'public' : null) });
-const mapJob = (row: any, clips: any[] = []): Job => ({ id: row.id, tenantId: row.tenant_id, channelId: row.channel_id, sourceVideoId: row.source_video_id, sourceTitle: row.source_title, sourceUrl: row.source_url, status: row.status, progress: Number(row.progress), detectedAt: row.detected_at.toISOString?.() || row.detected_at, deadlineAt: row.deadline_at.toISOString?.() || row.deadline_at, startedAt: row.started_at?.toISOString?.() || row.started_at, completedAt: row.completed_at?.toISOString?.() || row.completed_at, error: row.error, leaseOwner: row.lease_owner, leaseExpiresAt: row.lease_expires_at?.toISOString?.() || row.lease_expires_at, clips });
+const mapJob = (row: any, clips: any[] = []): Job => ({ id: row.id, tenantId: row.tenant_id, channelId: row.channel_id, sourceVideoId: row.source_video_id, sourceTitle: row.source_title, sourceUrl: row.source_url, status: row.status, progress: Number(row.progress), detectedAt: row.detected_at.toISOString?.() || row.detected_at, deadlineAt: row.deadline_at.toISOString?.() || row.deadline_at, startedAt: row.started_at?.toISOString?.() || row.started_at, completedAt: row.completed_at?.toISOString?.() || row.completed_at, error: row.error, leaseOwner: row.lease_owner, leaseExpiresAt: row.lease_expires_at?.toISOString?.() || row.lease_expires_at, priority: Number(row.priority ?? 0), clips });
 
 export async function saveConnectedChannel(tenantId: string, input: { youtubeChannelId: string; title: string; handle: string | null; sourceUrl: string; refreshTokenEncrypted: string }) {
   const webhookSecret = randomBytes(24).toString('base64url');
@@ -150,6 +150,18 @@ export async function requeueJob(tenantId: string, jobId: string) {
   if (!result.rowCount) throw new Error('Job not found or not in a retryable state');
 }
 
+export async function setJobPriority(tenantId: string, jobId: string, priority: number) {
+  if (!databaseEnabled()) {
+    const job = demoStore().jobs.find((j) => j.id === jobId && j.tenantId === tenantId);
+    if (!job) throw new Error('Job not found');
+    Object.assign(job, { priority });
+    return job;
+  }
+  const result = await query<any>('update jobs set priority=$3 where id=$1 and tenant_id=$2 and status in (\'queued\') returning *', [jobId, tenantId, priority]);
+  if (!result.rows[0]) throw new Error('Job not found or already running');
+  return mapJob(result.rows[0]);
+}
+
 export async function updateCreatorPreferences(tenantId: string, preferences: CreatorPreferences) {
   if (!databaseEnabled()) return preferences;
   const result = await query<{ creator_preferences: CreatorPreferences }>('update tenants set creator_preferences=$2 where id=$1 returning creator_preferences', [tenantId, preferences]);
@@ -211,7 +223,7 @@ export async function leaseNextJob(workerId: string) {
         (select a.data from channel_analytics_snapshots a where a.channel_id=j.channel_id order by a.synced_at desc limit 1) as performance_data
       from jobs j join tenants t on t.id=j.tenant_id
       where t.clips_this_month<t.monthly_clip_limit and (j.status='queued' or (j.status not in ('complete','failed') and j.lease_expires_at < now()))
-      order by case when t.plan in ('creator','clipping','studio') then 0 else 1 end,j.deadline_at asc for update of j skip locked limit 1
+      order by case when t.plan in ('creator','clipping','studio') then 0 else 1 end,j.priority desc,j.deadline_at asc for update of j skip locked limit 1
     ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '10 minutes'
     from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads,candidate.creator_preferences,candidate.performance_data`, [workerId]);
   return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads), preferences: { ...defaultCreatorPreferences, ...(result.rows[0].creator_preferences || {}) }, performanceData: result.rows[0].performance_data || null } : null;
