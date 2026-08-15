@@ -522,6 +522,7 @@ export default function Dashboard({
                       job={active}
                       remainingLabel={remainingLabel}
                       targetMinutes={data.sla.targetMinutes}
+                      onCancel={cancelJob}
                     />
                   )}
                 </>
