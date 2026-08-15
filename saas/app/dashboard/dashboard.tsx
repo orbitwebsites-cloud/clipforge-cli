@@ -934,6 +934,7 @@ function SourcesPanel({
   const [clipRightsConfirmed, setClipRightsConfirmed] = useState(false);
   const [clipSaving, setClipSaving] = useState(false);
   const [clipNotice, setClipNotice] = useState('');
+  const isClipUrlYouTube = /youtube\.com|youtu\.be/i.test(clipUrl);
 
   async function clipVideoUrl(event: React.FormEvent) {
     event.preventDefault();
@@ -942,7 +943,7 @@ function SourcesPanel({
     const response = await fetch('/api/videos/clip-url', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: clipUrl, rightsConfirmed: clipRightsConfirmed }),
+      body: JSON.stringify({ url: clipUrl, rightsConfirmed: isClipUrlYouTube ? clipRightsConfirmed : undefined }),
     });
     const body = await response.json();
     setClipSaving(false);
@@ -1212,8 +1213,8 @@ function SourcesPanel({
           </span>
           <h3>Clip a single video</h3>
           <p>
-            Paste any YouTube video URL to queue it for clipping — no need
-            to connect it as a monitored source first.
+            Paste a YouTube link, a Dropbox/Drive public share link, or a
+            direct video file URL — no need to connect it as a source first.
           </p>
           <form className="channel-form" onSubmit={clipVideoUrl}>
             <label htmlFor="clip-video-url">
@@ -1224,21 +1225,23 @@ function SourcesPanel({
                 id="clip-video-url"
                 value={clipUrl}
                 onChange={(event) => setClipUrl(event.target.value)}
-                placeholder="youtube.com/watch?v=..."
+                placeholder="youtube.com/watch?v=... or a Dropbox/Drive link"
                 required
               />
-              <button aria-label="Clip this video" disabled={clipSaving || !clipRightsConfirmed}>
+              <button aria-label="Clip this video" disabled={clipSaving || (isClipUrlYouTube && !clipRightsConfirmed)}>
                 {clipSaving ? <LoaderCircle className="spin" /> : <ArrowRight />}
               </button>
             </div>
-            <label className="rights-check">
-              <input
-                type="checkbox"
-                checked={clipRightsConfirmed}
-                onChange={(event) => setClipRightsConfirmed(event.target.checked)}
-              />
-              <ShieldCheck /> I own or have permission to repurpose this video.
-            </label>
+            {isClipUrlYouTube && (
+              <label className="rights-check">
+                <input
+                  type="checkbox"
+                  checked={clipRightsConfirmed}
+                  onChange={(event) => setClipRightsConfirmed(event.target.checked)}
+                />
+                <ShieldCheck /> I own or have permission to repurpose this video.
+              </label>
+            )}
           </form>
           {clipNotice && <p className="form-notice">{clipNotice}</p>}
         </aside>
