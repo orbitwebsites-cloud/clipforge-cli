@@ -218,7 +218,7 @@ export async function leaseNextJob(workerId: string) {
     });
     if (!job) return null;
     const tenant = demoStore().tenants.find((item) => item.id === job.tenantId)!;
-    Object.assign(job, { status: 'downloading', progress: 5, startedAt: job.startedAt || new Date().toISOString(), leaseOwner: workerId, leaseExpiresAt: new Date(Date.now() + 10 * 60000).toISOString() });
+    Object.assign(job, { status: 'downloading', progress: 5, startedAt: job.startedAt || new Date().toISOString(), leaseOwner: workerId, leaseExpiresAt: new Date(Date.now() + 60 * 60000).toISOString() });
     return { ...job, maxUploads: tenant.monthlyClipLimit - tenant.clipsThisMonth, preferences: defaultCreatorPreferences, performanceData: null };
   }
   await resetMonthlyUsage();
@@ -228,7 +228,7 @@ export async function leaseNextJob(workerId: string) {
       from jobs j join tenants t on t.id=j.tenant_id
       where t.clips_this_month<t.monthly_clip_limit and (j.status='queued' or (j.status not in ('complete','failed') and j.lease_expires_at < now()))
       order by case when t.plan in ('creator','clipping','studio') then 0 else 1 end,j.priority desc,j.deadline_at asc for update of j skip locked limit 1
-    ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '10 minutes'
+    ) update jobs set status='downloading', progress=5, started_at=coalesce(started_at,now()), lease_owner=$1, lease_expires_at=now()+interval '60 minutes'
     from candidate where jobs.id=candidate.id returning jobs.*,candidate.max_uploads,candidate.creator_preferences,candidate.performance_data`, [workerId]);
   return result.rows[0] ? { ...mapJob(result.rows[0]), maxUploads: Number(result.rows[0].max_uploads), preferences: { ...defaultCreatorPreferences, ...(result.rows[0].creator_preferences || {}) }, performanceData: result.rows[0].performance_data || null } : null;
 }
@@ -237,10 +237,10 @@ export async function updateJob(jobId: string, workerId: string, status: JobStat
   if (!databaseEnabled()) {
     const job = demoStore().jobs.find((j) => j.id === jobId && j.leaseOwner === workerId);
     if (!job) throw new Error('Job lease not found');
-    Object.assign(job, { status, progress, error, leaseExpiresAt: new Date(Date.now() + 10 * 60000).toISOString(), completedAt: ['complete', 'failed'].includes(status) ? new Date().toISOString() : null });
+    Object.assign(job, { status, progress, error, leaseExpiresAt: new Date(Date.now() + 60 * 60000).toISOString(), completedAt: ['complete', 'failed'].includes(status) ? new Date().toISOString() : null });
     return job;
   }
-  const result = await query<any>(`update jobs set status=$3,progress=$4,error=$5,lease_expires_at=now()+interval '10 minutes',completed_at=case when $3 in ('complete','failed') then now() else completed_at end where id=$1 and lease_owner=$2 returning *`, [jobId, workerId, status, progress, error]);
+  const result = await query<any>(`update jobs set status=$3,progress=$4,error=$5,lease_expires_at=now()+interval '60 minutes',completed_at=case when $3 in ('complete','failed') then now() else completed_at end where id=$1 and lease_owner=$2 returning *`, [jobId, workerId, status, progress, error]);
   if (!result.rows[0]) throw new Error('Job lease not found');
   return mapJob(result.rows[0]);
 }
