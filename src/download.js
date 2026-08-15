@@ -29,6 +29,7 @@ const cookiesFile = process.env.CFC_YTDLP_COOKIES_FILE;
 // cookies file nor a POT server is set — headless hosts have no browser profile
 // to read and crash instead of downloading ("could not find firefox cookies database").
 const cookieBrowser = (process.env.CFC_YTDLP_COOKIES || (potServerHome ? 'none' : 'firefox')).trim();
+console.error(`[download.js] CFC_YTDLP_COOKIES=${JSON.stringify(process.env.CFC_YTDLP_COOKIES)} CFC_YTDLP_POT_SERVER_HOME=${JSON.stringify(potServerHome)} resolvedCookieBrowser=${JSON.stringify(cookieBrowser)} cookiesFile=${JSON.stringify(cookiesFile)}`);
 if (cookiesFile) {
   YTDLP_RUNTIME_ARGS.push('--cookies', cookiesFile);
 } else if (cookieBrowser && cookieBrowser !== 'none') {
