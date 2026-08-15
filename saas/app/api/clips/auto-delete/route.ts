@@ -40,7 +40,9 @@ export async function POST(request: Request) {
     const hours = body.hours ?? prefs.autoDeleteAfterHours;
     const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-    // CRITICAL: only select clips ClipForge uploaded — must have youtube_video_id
+    // CRITICAL: only select clips ClipForge uploaded — must have youtube_video_id.
+    // Backfilled (previously-existing) source videos are excluded — clips generated
+    // from a batch of old content shouldn't get judged by the same fresh-upload clock.
     const { rows: candidates } = await query<{ id: string; youtube_video_id: string; channel_id: string }>(
       `SELECT c.id, c.youtube_video_id, j.channel_id
        FROM clips c
@@ -48,6 +50,7 @@ export async function POST(request: Request) {
        WHERE j.tenant_id = $1
          AND c.status = 'uploaded'
          AND c.youtube_video_id IS NOT NULL
+         AND j.origin != 'backfill'
          AND c.created_at < $2`,
       [tenantId, cutoffDate],
     );

@@ -193,16 +193,20 @@ export async function existingJobVideoIds(tenantId: string) {
   return result.rows.map((row) => row.source_video_id);
 }
 
-export async function enqueueVideo(source: StoredSourceChannel, video: { id: string; title: string; publishedAt?: string; url?: string }) {
+export async function enqueueVideo(
+  source: StoredSourceChannel,
+  video: { id: string; title: string; publishedAt?: string; url?: string },
+  origin: 'live' | 'backfill' = 'live',
+) {
   const detectedAt = new Date();
   const plan = databaseEnabled()
     ? (await query<{ plan: string }>('select plan from tenants where id=$1', [source.tenantId])).rows[0]?.plan
     : demoStore().tenants.find((tenant) => tenant.id === source.tenantId)?.plan;
   const targetMinutes = plan === 'free' ? 1440 : 180;
-  const base = { tenantId: source.tenantId, channelId: source.destinationChannelId, sourceVideoId: video.id, sourceTitle: video.title, sourceUrl: video.url || `https://youtube.com/watch?v=${video.id}`, detectedAt: detectedAt.toISOString(), deadlineAt: new Date(detectedAt.getTime() + targetMinutes * 60000).toISOString() };
+  const base = { tenantId: source.tenantId, channelId: source.destinationChannelId, sourceVideoId: video.id, sourceTitle: video.title, sourceUrl: video.url || `https://youtube.com/watch?v=${video.id}`, detectedAt: detectedAt.toISOString(), deadlineAt: new Date(detectedAt.getTime() + targetMinutes * 60000).toISOString(), origin };
   if (!databaseEnabled()) return demoEnqueue(base);
-  const result = await query<any>(`insert into jobs (id,tenant_id,channel_id,source_video_id,source_title,source_url,status,progress,detected_at,deadline_at)
-    values ($1,$2,$3,$4,$5,$6,'queued',0,$7,$8) on conflict (tenant_id,source_video_id) do update set source_title=excluded.source_title returning *`, [randomUUID(), base.tenantId, base.channelId, base.sourceVideoId, base.sourceTitle, base.sourceUrl, base.detectedAt, base.deadlineAt]);
+  const result = await query<any>(`insert into jobs (id,tenant_id,channel_id,source_video_id,source_title,source_url,status,progress,detected_at,deadline_at,origin)
+    values ($1,$2,$3,$4,$5,$6,'queued',0,$7,$8,$9) on conflict (tenant_id,source_video_id) do update set source_title=excluded.source_title returning *`, [randomUUID(), base.tenantId, base.channelId, base.sourceVideoId, base.sourceTitle, base.sourceUrl, base.detectedAt, base.deadlineAt, base.origin]);
   return mapJob(result.rows[0]);
 }
 

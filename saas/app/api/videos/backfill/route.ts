@@ -126,7 +126,7 @@ export async function POST(request: Request) {
       }
     }
 
-    for (const { source, video } of selected) await enqueueVideo(source, video);
+    for (const { source, video } of selected) await enqueueVideo(source, video, 'backfill');
     return Response.json({ ok: true, queued: selected.length, skipped: requested - selected.length, dashboard: await getDashboard(tenantId) });
   } catch (error) {
     const message = error instanceof z.ZodError ? error.issues[0]?.message : error instanceof Error ? error.message : 'Videos could not be queued.';
