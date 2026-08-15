@@ -62,7 +62,7 @@ function videoChain(meta, reframe) {
       `[bg]scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},` +
       `gblur=sigma=${BLUR_SIGMA},eq=brightness=-0.12,scale=${W}:${H}[bgb];` +
       `[fg]scale=${W}:-2:force_original_aspect_ratio=decrease[fgs];` +
-      `[bgb][fgs]overlay=(W-w)/2:(H-h)/2[vout]`
+      `[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[vout]`
     );
   }
   const { cw, ch, x, y } = cropRect(meta.width, meta.height, reframe);
