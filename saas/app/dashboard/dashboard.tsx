@@ -1746,32 +1746,7 @@ function SettingsPanel({
           </span>
         </label>
         {preferences.autoDeleteEnabled && (
-          <div className="field-row auto-delete-row">
-            <label>
-              Min views threshold
-              <input
-                type="number"
-                min={1}
-                max={100000}
-                value={preferences.autoDeleteMinViews}
-                onChange={(event) =>
-                  update('autoDeleteMinViews', Number(event.target.value))
-                }
-              />
-            </label>
-            <label>
-              Days before checking
-              <input
-                type="number"
-                min={1}
-                max={90}
-                value={preferences.autoDeleteAfterDays}
-                onChange={(event) =>
-                  update('autoDeleteAfterDays', Number(event.target.value))
-                }
-              />
-            </label>
-          </div>
+          <AutoDeleteControls preferences={preferences} update={update} />
         )}
         <div className="control-actions">
           {notice && <p className="form-notice">{notice}</p>}
@@ -1787,6 +1762,70 @@ function SettingsPanel({
         </div>
       </form>
     </section>
+  );
+}
+
+function AutoDeleteControls({
+  preferences,
+  update,
+}: {
+  preferences: CreatorPreferences;
+  update: <K extends keyof CreatorPreferences>(key: K, value: CreatorPreferences[K]) => void;
+}) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState('');
+
+  async function runNow() {
+    setRunning(true);
+    setResult('');
+    try {
+      const res = await fetch('/api/clips/auto-delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ minViews: preferences.autoDeleteMinViews, hours: preferences.autoDeleteAfterHours }),
+      });
+      const body = await res.json();
+      if (body.ok) {
+        setResult(body.deleted === 0 ? body.message ?? 'No clips met the delete threshold.' : `Deleted ${body.deleted} clip${body.deleted === 1 ? '' : 's'}.`);
+      } else {
+        setResult(body.error ?? 'Run failed.');
+      }
+    } catch {
+      setResult('Network error — try again.');
+    }
+    setRunning(false);
+  }
+
+  return (
+    <div className="field-row auto-delete-row">
+      <label>
+        Min views
+        <input
+          type="number"
+          min={1}
+          max={100000}
+          value={preferences.autoDeleteMinViews}
+          onChange={(event) => update('autoDeleteMinViews', Number(event.target.value))}
+        />
+      </label>
+      <label>
+        Hours old before checking
+        <input
+          type="number"
+          min={1}
+          max={2160}
+          value={preferences.autoDeleteAfterHours}
+          onChange={(event) => update('autoDeleteAfterHours', Number(event.target.value))}
+        />
+      </label>
+      <div className="auto-delete-run">
+        <button type="button" className="button button-dark" disabled={running} onClick={runNow}>
+          {running ? <LoaderCircle className="spin" /> : <Trash2 />}
+          Run now
+        </button>
+        {result && <span className="form-notice">{result}</span>}
+      </div>
+    </div>
   );
 }
 

@@ -13,7 +13,7 @@ const schema = z.object({
   learningEnabled: z.boolean(),
   autoDeleteEnabled: z.boolean(),
   autoDeleteMinViews: z.number().int().min(1).max(100000),
-  autoDeleteAfterDays: z.number().int().min(1).max(90),
+  autoDeleteAfterHours: z.number().int().min(1).max(2160),
 }).refine((value) => value.maxClipSeconds > value.minClipSeconds, { message: 'Maximum clip length must be greater than the minimum.' });
 
 export async function PUT(request: Request) {

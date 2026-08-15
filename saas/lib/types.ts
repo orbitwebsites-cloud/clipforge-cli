@@ -60,7 +60,7 @@ export type CreatorPreferences = {
   learningEnabled: boolean;
   autoDeleteEnabled: boolean;
   autoDeleteMinViews: number;
-  autoDeleteAfterDays: number;
+  autoDeleteAfterHours: number;
 };
 
 export type PastVideo = {

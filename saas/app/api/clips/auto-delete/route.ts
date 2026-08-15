@@ -33,10 +33,10 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, deleted: 0, message: 'Auto-delete is disabled.' });
     }
 
-    const body = await request.json().catch(() => ({})) as { minViews?: number; days?: number };
+    const body = await request.json().catch(() => ({})) as { minViews?: number; hours?: number };
     const minViews = body.minViews ?? prefs.autoDeleteMinViews;
-    const days = body.days ?? prefs.autoDeleteAfterDays;
-    const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const hours = body.hours ?? prefs.autoDeleteAfterHours;
+    const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
     // CRITICAL: only select clips ClipForge uploaded — must have youtube_video_id
     const { rows: candidates } = await query<{ id: string; youtube_video_id: string; channel_id: string }>(
