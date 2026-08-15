@@ -62,20 +62,21 @@ function deepgramKeyPool() {
 export const config = {
   groqKey: process.env.GROQ_API_KEY || '',
   cerebrasKey: process.env.CEREBRAS_API_KEY || '',
+  geminiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '',
   deepgramKey: process.env.DEEPGRAM_API_KEY || '',
-  // Extra Deepgram keys, tried in order when the primary is rate-limited or its
-  // balance is exhausted. Accepts either DEEPGRAM_API_KEYS=a,b,c or numbered
-  // DEEPGRAM_API_KEY_2 / _3 / … so adding one never rewrites the existing line.
   deepgramKeys: deepgramKeyPool(),
   groqBase: 'https://api.groq.com/openai/v1',
   cerebrasBase: 'https://api.cerebras.ai/v1',
+  // Gemini exposes an OpenAI-compatible endpoint — same request shape, zero new parsing.
+  geminiBase: 'https://generativelanguage.googleapis.com/v1beta/openai',
   deepgramBase: 'https://api.deepgram.com/v1',
   whisperModel: process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo',
   deepgramModel: process.env.DEEPGRAM_MODEL || 'nova-3',
   cerebrasModel: process.env.CEREBRAS_MODEL || '',
-  // Failover target when Cerebras exhausts its tokens-per-minute quota. Groq
-  // serves the same gpt-oss-120b, so the fallback's output characteristics match
-  // rather than quietly changing how clips get scored mid-run.
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+  mistralKey: process.env.MISTRAL_API_KEY || '',
+  mistralBase: 'https://api.mistral.ai/v1',
+  mistralModel: process.env.MISTRAL_MODEL || 'mistral-small-latest',
   groqChatModel: process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b',
   proxyPort: Number(process.env.CFC_PROXY_PORT || 8787),
 };

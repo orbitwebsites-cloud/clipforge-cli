@@ -238,41 +238,92 @@ export const cerebras = {
     ),
 };
 
+export const mistral = {
+  get key() {
+    if (!config.mistralKey) throw new Error('MISTRAL_API_KEY is not set');
+    return config.mistralKey;
+  },
+
+  chat: (payload) =>
+    withRetry(
+      () => request(`${config.mistralBase}/chat/completions`, {
+        key: mistral.key,
+        method: 'POST',
+        json: { ...payload, model: config.mistralModel },
+      }),
+      { label: 'mistral/chat' }
+    ),
+};
+
+export const gemini = {
+  get key() {
+    if (!config.geminiKey) throw new Error('GEMINI_API_KEY is not set — add it to .env or run `cfc doctor`');
+    return config.geminiKey;
+  },
+
+  chat: (payload) =>
+    withRetry(
+      () => request(`${config.geminiBase}/chat/completions`, {
+        key: gemini.key,
+        method: 'POST',
+        // Gemini Flash doesn't need a temperature nudge — strip unsupported fields
+        json: { ...payload, model: config.geminiModel },
+      }),
+      { label: 'gemini/chat' }
+    ),
+};
+
 /**
- * Chat with automatic failover from Cerebras to Groq.
+ * Chat with automatic failover: Gemini 2.0 Flash → Cerebras → Groq.
  *
- * Cerebras meters TOKENS per minute, not requests, so batching the same work
- * into fewer calls does not help — the quota is the transcript itself. The only
- * real escapes are waiting or spending someone else's quota, and Groq serves the
- * same gpt-oss-120b, so failing over changes throughput without changing how
- * clips are judged.
- *
- * Non-quota errors are rethrown untouched: a malformed payload should surface as
- * itself, not as a second identical failure against a different vendor.
+ * Gemini is primary: 1M free tokens/day, better structured JSON than Llama,
+ * and OpenAI-compatible so the payload passes through unchanged.
+ * Cerebras and Groq are retained as fallbacks for quota exhaustion (429).
  */
 export async function chatWithFailover(payload, { log = () => {} } = {}) {
   return llmGate.run(() => chatOnce(payload, { log }));
 }
 
 async function chatOnce(payload, { log }) {
-  const model = await resolveCerebrasModel();
-  try {
-    return await cerebras.chat({ ...payload, model });
-  } catch (err) {
-    const quota = err.status === 429;
-    if (!quota || !config.groqKey) throw err;
-    log(`  cerebras quota exhausted — falling back to groq/${config.groqChatModel}`);
+  // 1. Try Gemini first (best free tier + quality)
+  if (config.geminiKey) {
     try {
-      return await groq.chat({ ...payload, model: config.groqChatModel });
-    } catch (err2) {
-      // Groq's free tier is 8k TPM and answers an over-budget request with 413,
-      // not 429. Rethrowing that would report a size problem for what is really
-      // a Cerebras quota problem, and would hide which provider ran out first,
-      // so surface the original error with the fallback's verdict attached.
-      const why = err2.status === 413 ? `too large for groq's tier (${err2.status})` : `groq also failed (${err2.status || err2.name})`;
-      log(`  ! ${why} — no provider could serve this request`);
-      throw err;
+      return await gemini.chat(payload);
+    } catch (err) {
+      if (err.status !== 429 && err.status !== 503) throw err;
+      log(`  gemini quota/unavailable (${err.status}) — falling back to cerebras`);
     }
+  }
+
+  // 2. Cerebras fallback
+  if (config.cerebrasKey) {
+    const model = await resolveCerebrasModel();
+    try {
+      return await cerebras.chat({ ...payload, model });
+    } catch (err) {
+      if (err.status !== 429) throw err;
+      log(`  cerebras quota exhausted — falling back to groq/${config.groqChatModel}`);
+    }
+  }
+
+  // 3. Mistral fallback
+  if (config.mistralKey) {
+    try {
+      return await mistral.chat(payload);
+    } catch (err) {
+      if (err.status !== 429) throw err;
+      log(`  mistral quota exhausted — falling back to groq`);
+    }
+  }
+
+  // 4. Groq last resort
+  if (!config.groqKey) throw new Error('All LLM providers exhausted — set at least one of GEMINI_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY');
+  try {
+    return await groq.chat({ ...payload, model: config.groqChatModel });
+  } catch (err2) {
+    const why = err2.status === 413 ? `too large for groq free tier` : `groq failed (${err2.status || err2.name})`;
+    log(`  ! ${why} — all 4 providers failed`);
+    throw err2;
   }
 }
 
