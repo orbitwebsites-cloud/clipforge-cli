@@ -69,6 +69,27 @@ function tagsFrom(preferences) {
   return { line: tags.join(' '), values: tags.map((tag) => tag.slice(1).toLowerCase()).filter(Boolean) };
 }
 
+/**
+ * Retry a single clip's upload a few times before giving up on it.
+ * A transient YouTube 5xx or network blip on clip 3 of 5 must not take down
+ * clips 1-2 (already live) or clips 4-5 (rendered and waiting) with it.
+ */
+async function uploadWithRetry(file, meta, opts, log, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await uploadVideo(file, meta, opts);
+    } catch (err) {
+      lastErr = err;
+      if (i === tries - 1) break;
+      const wait = Math.min(2 ** i * 3000, 20000);
+      log(`  ! upload failed for "${meta.title}" (${err instanceof Error ? err.message : err}) — retrying in ${wait / 1000}s`);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+  throw lastErr;
+}
+
 async function selectClips(transcript, duration, log, job) {
   const preferences = job.preferences;
   let critique = null;
@@ -104,14 +125,25 @@ async function processJob(job) {
     await progress(job, 'uploading', 84);
     const { accessToken } = await api('/api/worker/youtube-token', { channelId: job.channelId });
     const uploaded = [];
+    const failedClips = [];
     const hashtags = tagsFrom(preferences);
     const requestedPrivacy = preferences.publishMode === 'review' ? 'private' : 'public';
     for (const clip of rendered) {
-      const result = await uploadVideo(clip.file, { title: clip.title, description: `${clip.title}\n\n${hashtags.line}`, tags: hashtags.values, privacyStatus: requestedPrivacy }, { token: accessToken, log });
-      uploaded.push({ title: clip.title, durationSeconds: Number((clip.end - clip.start).toFixed(2)), youtubeVideoId: result.id, youtubeUrl: result.shortUrl, privacyStatus: result.privacyStatus === 'public' ? 'public' : 'private' });
+      const meta = { title: clip.title, description: `${clip.title}\n\n${hashtags.line}`, tags: hashtags.values, privacyStatus: requestedPrivacy };
+      try {
+        const result = await uploadWithRetry(clip.file, meta, { token: accessToken, log }, log);
+        uploaded.push({ title: clip.title, durationSeconds: Number((clip.end - clip.start).toFixed(2)), youtubeVideoId: result.id, youtubeUrl: result.shortUrl, privacyStatus: result.privacyStatus === 'public' ? 'public' : 'private' });
+      } catch (error) {
+        // One clip exhausting its retries must not discard clips that already
+        // uploaded, or clips still waiting their turn — keep going.
+        const message = error instanceof Error ? error.message : String(error);
+        log(`  ! giving up on "${clip.title}" after retries: ${message}`);
+        failedClips.push({ title: clip.title, error: message });
+      }
     }
+    if (!uploaded.length) throw new Error(`All ${rendered.length} clip upload(s) failed: ${failedClips.map((f) => f.error).join('; ')}`);
     await api('/api/worker/complete', { jobId: job.id, workerId, clips: uploaded });
-    log(`complete: ${uploaded.length} Shorts published`);
+    log(`complete: ${uploaded.length}/${rendered.length} Shorts published${failedClips.length ? ` (${failedClips.length} failed after retries — rendered but not uploaded)` : ''}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[${job.id}] ${message}`);
