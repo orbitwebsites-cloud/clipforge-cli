@@ -208,11 +208,25 @@ export async function uploadVideo(file, meta, { log = () => {}, token: suppliedT
   if (!location) throw new Error('No resumable upload URL returned by YouTube');
 
   log(`  uploading ${(size / 1048576).toFixed(1)} MB…`);
-  const put = await fetch(location, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(size) },
-    body: readFileSync(file),
-  });
+  const ctrl = new AbortController();
+  // A stalled connection with no timeout hangs the upload stage forever —
+  // the job's lease eventually expires and gets stolen, so this looks
+  // identical to the "stuck processing" symptom the lease-TTL fix addressed.
+  const timer = setTimeout(() => ctrl.abort(), 20 * 60_000);
+  let put;
+  try {
+    put = await fetch(location, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(size) },
+      body: readFileSync(file),
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Upload timed out after 20 minutes — stalled connection to YouTube.');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   const result = await put.json().catch(() => ({}));
   if (!put.ok) throw new Error(`Upload failed (${put.status}): ${JSON.stringify(result).slice(0, 500)}`);
 
