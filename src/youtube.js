@@ -152,84 +152,7 @@ export function saveRefreshToken(token) {
  * is requested here. Treat `privacyStatus: 'public'` as a request, not a
  * guarantee, and check the response.
  */
-export async function uploadVideo(file, meta, { log = () => {}, token: suppliedToken = null, credentials = null } = {}) {
-  if (!existsSync(file)) throw new Error(`No such file: ${file}`);
-  const size = statSync(file).size;
-  const token = suppliedToken || await accessToken(credentials || creds());
-
-  const body = {
-    snippet: {
-      title: (meta.title || path.basename(file)).slice(0, 100),
-      description: (meta.description || '').slice(0, 5000),
-      tags: meta.tags || undefined,
-      categoryId: meta.categoryId || '22',
-    },
-    status: {
-      privacyStatus: meta.privacyStatus || 'private',
-      selfDeclaredMadeForKids: Boolean(meta.madeForKids),
-    },
-  };
-
-  const init = await fetch(`${UPLOAD_URL}?uploadType=resumable&part=snippet,status`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'X-Upload-Content-Length': String(size),
-      'X-Upload-Content-Type': 'video/mp4',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!init.ok) {
-    const text = await init.text();
-    let reason = '';
-    try {
-      reason = JSON.parse(text).error?.errors?.[0]?.reason || '';
-    } catch {
-      /* non-JSON body */
-    }
-    // Two different ceilings get confused constantly:
-    //   quotaExceeded      -> the project's 10,000 API units/day (~6 inserts)
-    //   uploadLimitExceeded-> a per-channel cap YouTube puts on unverified or
-    //                         new channels. Usually tighter, and no amount of
-    //                         API quota buys past it.
-    const err = new Error(
-      reason === 'uploadLimitExceeded'
-        ? 'Channel upload limit reached — YouTube caps uploads per channel per day, separately from API quota. ' +
-          'Verify the channel at youtube.com/verify to raise it, or wait ~24h.'
-        : reason === 'quotaExceeded'
-          ? 'API quota exhausted: videos.insert costs 1600 of 10000 units/day (~6 uploads).'
-          : `Upload init failed (${init.status})\n${text.slice(0, 400)}`
-    );
-    err.reason = reason;
-    throw err;
-  }
-  const location = init.headers.get('location');
-  if (!location) throw new Error('No resumable upload URL returned by YouTube');
-
-  log(`  uploading ${(size / 1048576).toFixed(1)} MB…`);
-  const ctrl = new AbortController();
-  // A stalled connection with no timeout hangs the upload stage forever —
-  // the job's lease eventually expires and gets stolen, so this looks
-  // identical to the "stuck processing" symptom the lease-TTL fix addressed.
-  const timer = setTimeout(() => ctrl.abort(), 20 * 60_000);
-  let put;
-  try {
-    put = await fetch(location, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(size) },
-      body: readFileSync(file),
-      signal: ctrl.signal,
-    });
-  } catch (err) {
-    if (err.name === 'AbortError') throw new Error('Upload timed out after 20 minutes — stalled connection to YouTube.');
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-  const result = await put.json().catch(() => ({}));
-  if (!put.ok) throw new Error(`Upload failed (${put.status}): ${JSON.stringify(result).slice(0, 500)}`);
-
+function finalizeResult(result) {
   return {
     id: result.id,
     url: `https://youtube.com/watch?v=${result.id}`,
@@ -237,4 +160,132 @@ export async function uploadVideo(file, meta, { log = () => {}, token: suppliedT
     privacyStatus: result.status?.privacyStatus,
     title: result.snippet?.title,
   };
+}
+
+/** Query how many bytes YouTube has already received for a resumable session. */
+async function resumeOffset(location, size) {
+  const res = await fetch(location, {
+    method: 'PUT',
+    headers: { 'Content-Range': `bytes */${size}` },
+  });
+  if (res.status === 308) {
+    const range = res.headers.get('range'); // e.g. "bytes=0-12345"
+    return range ? Number(range.split('-')[1]) + 1 : 0;
+  }
+  if (res.ok) {
+    // Already fully received and processed on a prior attempt.
+    const result = await res.json().catch(() => ({}));
+    return { done: true, result };
+  }
+  return null; // session expired/invalid — caller must start a fresh one
+}
+
+export async function uploadVideo(file, meta, { log = () => {}, token: suppliedToken = null, credentials = null, resumeLocation = null } = {}) {
+  if (!existsSync(file)) throw new Error(`No such file: ${file}`);
+  const size = statSync(file).size;
+  const token = suppliedToken || await accessToken(credentials || creds());
+
+  let location = resumeLocation;
+  let startByte = 0;
+
+  if (location) {
+    const offset = await resumeOffset(location, size);
+    if (offset && typeof offset === 'object' && offset.done) {
+      return finalizeResult(offset.result);
+    }
+    if (offset === null) location = null; // expired — fall through to a fresh session
+    else startByte = offset;
+  }
+
+  if (!location) {
+    const body = {
+      snippet: {
+        title: (meta.title || path.basename(file)).slice(0, 100),
+        description: (meta.description || '').slice(0, 5000),
+        tags: meta.tags || undefined,
+        categoryId: meta.categoryId || '22',
+      },
+      status: {
+        privacyStatus: meta.privacyStatus || 'private',
+        selfDeclaredMadeForKids: Boolean(meta.madeForKids),
+      },
+    };
+
+    const init = await fetch(`${UPLOAD_URL}?uploadType=resumable&part=snippet,status`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Upload-Content-Length': String(size),
+        'X-Upload-Content-Type': 'video/mp4',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!init.ok) {
+      const text = await init.text();
+      let reason = '';
+      try {
+        reason = JSON.parse(text).error?.errors?.[0]?.reason || '';
+      } catch {
+        /* non-JSON body */
+      }
+      // Two different ceilings get confused constantly:
+      //   quotaExceeded      -> the project's 10,000 API units/day (~6 inserts)
+      //   uploadLimitExceeded-> a per-channel cap YouTube puts on unverified or
+      //                         new channels. Usually tighter, and no amount of
+      //                         API quota buys past it.
+      const err = new Error(
+        reason === 'uploadLimitExceeded'
+          ? 'Channel upload limit reached — YouTube caps uploads per channel per day, separately from API quota. ' +
+            'Verify the channel at youtube.com/verify to raise it, or wait ~24h.'
+          : reason === 'quotaExceeded'
+            ? 'API quota exhausted: videos.insert costs 1600 of 10000 units/day (~6 uploads).'
+            : `Upload init failed (${init.status})\n${text.slice(0, 400)}`
+      );
+      err.reason = reason;
+      throw err;
+    }
+    location = init.headers.get('location');
+    if (!location) throw new Error('No resumable upload URL returned by YouTube');
+  }
+
+  const remaining = size - startByte;
+  log(startByte ? `  resuming upload at ${(startByte / 1048576).toFixed(1)}/${(size / 1048576).toFixed(1)} MB…` : `  uploading ${(size / 1048576).toFixed(1)} MB…`);
+  const ctrl = new AbortController();
+  // A stalled connection with no timeout hangs the upload stage forever —
+  // the job's lease eventually expires and gets stolen, so this looks
+  // identical to the "stuck processing" symptom the lease-TTL fix addressed.
+  const timer = setTimeout(() => ctrl.abort(), 20 * 60_000);
+  let put;
+  try {
+    const buf = readFileSync(file);
+    put = await fetch(location, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Content-Length': String(remaining),
+        ...(startByte ? { 'Content-Range': `bytes ${startByte}-${size - 1}/${size}` } : {}),
+      },
+      body: startByte ? buf.subarray(startByte) : buf,
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Upload timed out after 20 minutes — stalled connection to YouTube.');
+      timeoutErr.location = location;
+      throw timeoutErr;
+    }
+    err.location = location;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  const result = await put.json().catch(() => ({}));
+  if (!put.ok) {
+    const err = new Error(`Upload failed (${put.status}): ${JSON.stringify(result).slice(0, 500)}`);
+    err.location = location;
+    throw err;
+  }
+
+  return finalizeResult(result);
 }

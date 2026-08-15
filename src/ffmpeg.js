@@ -41,10 +41,20 @@ export async function probe(file) {
   const video = (info.streams || []).find((s) => s.codec_type === 'video');
   const audio = (info.streams || []).find((s) => s.codec_type === 'audio');
   if (!video && !audio) throw new Error(`No audio or video streams found in ${file}`);
+  // ffprobe reports the STORED frame size; a 90/270 rotation tag (common on
+  // phone-shot footage) means the DECODED/displayed frame — what ffmpeg's
+  // autorotate hands the filtergraph — has width/height swapped from that.
+  // Ignoring this flips portrait sources into a landscape crop.
+  const rotateTag = Number(video?.tags?.rotate || 0);
+  const matrixRotation = (video?.side_data_list || []).find((d) => typeof d.rotation === 'number')?.rotation || 0;
+  const rotation = (((rotateTag || matrixRotation) % 360) + 360) % 360;
+  const swapped = rotation === 90 || rotation === 270;
+  const rawWidth = video ? Number(video.width) : 0;
+  const rawHeight = video ? Number(video.height) : 0;
   return {
     duration: Number(info.format?.duration || 0),
-    width: video ? Number(video.width) : 0,
-    height: video ? Number(video.height) : 0,
+    width: swapped ? rawHeight : rawWidth,
+    height: swapped ? rawWidth : rawHeight,
     hasAudio: Boolean(audio),
     hasVideo: Boolean(video),
     fps: video ? evalFraction(video.r_frame_rate) : 0,

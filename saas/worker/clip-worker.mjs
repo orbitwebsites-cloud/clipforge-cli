@@ -76,11 +76,15 @@ function tagsFrom(preferences) {
  */
 async function uploadWithRetry(file, meta, opts, log, tries = 3) {
   let lastErr;
+  let resumeLocation = null;
   for (let i = 0; i < tries; i++) {
     try {
-      return await uploadVideo(file, meta, opts);
+      return await uploadVideo(file, meta, { ...opts, resumeLocation });
     } catch (err) {
       lastErr = err;
+      // A resumable session survives the attempt that broke it — reuse it
+      // next time instead of re-uploading the file from byte 0.
+      if (err.location) resumeLocation = err.location;
       if (i === tries - 1) break;
       const wait = Math.min(2 ** i * 3000, 20000);
       log(`  ! upload failed for "${meta.title}" (${err instanceof Error ? err.message : err}) — retrying in ${wait / 1000}s`);
